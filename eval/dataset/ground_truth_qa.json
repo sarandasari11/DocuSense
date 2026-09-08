@@ -1,0 +1,42 @@
+[
+  {
+    "id": 1,
+    "question": "What is the policy ID for the 2026 employee handbook?",
+    "target_year": 2026,
+    "ground_truth_answer": "HR-2026-017",
+    "relevant_doc": "HR Policy 2026",
+    "category": "exact_keyword_lookup"
+  },
+  {
+    "id": 2,
+    "question": "How many days per week are employees allowed to work remotely in 2024?",
+    "target_year": 2024,
+    "ground_truth_answer": "Up to 2 days per week with mandatory manager approval.",
+    "relevant_doc": "HR Policy 2024",
+    "category": "temporal_factual"
+  },
+  {
+    "id": 3,
+    "question": "How many days of annual vacation leave are granted in 2026?",
+    "target_year": 2026,
+    "ground_truth_answer": "25 days of paid annual vacation leave per calendar year.",
+    "relevant_doc": "HR Policy 2026",
+    "category": "temporal_factual"
+  },
+  {
+    "id": 4,
+    "question": "What are the rules regarding approval for remote work across versions?",
+    "target_year": null,
+    "ground_truth_answer": "In 2024 manager approval was mandatory; in 2026 approval is not explicitly required (departmental registration recommended).",
+    "relevant_doc": "Both",
+    "category": "cross_document_reasoning"
+  },
+  {
+    "id": 5,
+    "question": "What wellness or health reimbursement amounts are offered?",
+    "target_year": null,
+    "ground_truth_answer": "$500 annual wellness reimbursement in 2024 and $1,000 annual wellness stipend in 2026.",
+    "relevant_doc": "Both",
+    "category": "contradiction_and_evolution"
+  }
+]

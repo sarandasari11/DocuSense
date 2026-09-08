@@ -1,0 +1,29 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local databases and runtime storage
+*.db
+*.sqlite
+*.sqlite3
+backend/storage/*
+eval/storage/*
+
+# Model and tool caches
+.cache/
+.huggingface/
+
+# IDE and OS files
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db

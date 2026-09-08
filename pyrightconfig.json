@@ -1,0 +1,11 @@
+{
+  "include": [
+    "backend"
+  ],
+  "extraPaths": [
+    "backend"
+  ],
+  "venvPath": "C:\\Users\\asus\\AppData\\Local\\Programs\\Python",
+  "venv": "Python311",
+  "reportMissingImports": "none"
+}
