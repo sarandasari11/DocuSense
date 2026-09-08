@@ -1,10 +1,13 @@
-const API_BASE = "http://localhost:8000/api/v1";
+const API_BASE = "/api/v1";
 
 // Global Application State
 let state = {
   currentTab: "chat",
   documents: [],
-  conversationId: null
+  conversationId: null,
+  latestCitations: [],
+  selectedDocumentId: null,
+  evidenceOpen: true
 };
 
 // Initialize UI on Load
@@ -17,12 +20,18 @@ document.addEventListener("DOMContentLoaded", () => {
   initQuickSample();
   initCompare();
   initClearAll();
+  initWorkspaceRail();
+  initDocumentFilters();
+  initEvidencePanel();
+  initDocumentDetail();
   fetchDocuments();
   fetchAnalytics();
+  fetchSystemHealth();
+  window.setInterval(fetchSystemHealth, 30000);
 });
 
 function initTheme() {
-  const savedTheme = localStorage.getItem("docusense-theme") || "dark";
+  const savedTheme = localStorage.getItem("docusense-theme") || "light";
   applyTheme(savedTheme);
 
   const toggle = document.getElementById("btn-theme-toggle");
@@ -51,6 +60,162 @@ function initLucide() {
   if (window.lucide) {
     window.lucide.createIcons();
   }
+}
+
+function initWorkspaceRail() {
+  document.querySelectorAll(".conversation-item").forEach(item => {
+    item.addEventListener("click", () => {
+      document.querySelectorAll(".conversation-item").forEach(entry => entry.classList.remove("active"));
+      item.classList.add("active");
+      const session = item.dataset.session;
+      const crumb = document.getElementById("crumb-current-page");
+      if (crumb) crumb.textContent = session;
+    });
+  });
+
+  const newConversation = document.getElementById("btn-new-conversation");
+  if (newConversation) {
+    newConversation.addEventListener("click", () => {
+      state.conversationId = null;
+      document.getElementById("chat-messages").innerHTML = `<div class="chat-hero compact-hero"><div class="hero-icon-container"><i data-lucide="message-square-plus"></i></div><h2>New grounded session</h2><p>Ask a question and inspect the exact source passages behind the answer.</p></div>`;
+      document.getElementById("evidence-list").innerHTML = `<div class="evidence-empty"><i data-lucide="quote"></i><span>Ask a question to inspect cited passages.</span></div>`;
+      initLucide();
+    });
+  }
+
+  const search = document.getElementById("source-search-input");
+  if (search) search.addEventListener("input", () => renderSourceRail(search.value));
+}
+
+function renderSourceRail(query = "") {
+  const list = document.getElementById("source-list");
+  const count = document.getElementById("rail-source-count");
+  if (!list) return;
+  const normalized = query.toLowerCase().trim();
+  const docs = state.documents.filter(doc => (doc.title || doc.filename).toLowerCase().includes(normalized));
+  if (count) count.textContent = docs.length;
+  list.innerHTML = docs.length ? docs.map(doc => `
+    <button class="source-item" data-document-id="${doc.id}" title="Open ${escapeHtml(doc.title || doc.filename)}">
+      <span class="source-file-icon"><i data-lucide="file-text"></i></span>
+      <span class="source-item-copy"><strong>${escapeHtml(doc.title || doc.filename)}</strong><small>${escapeHtml(doc.version || "1.0")} · ${doc.status || "indexed"}</small></span>
+      <span class="source-ready-dot ${doc.status === "ready" ? "" : "pending"}"></span>
+    </button>`).join("") : `<div class="rail-empty">No matching sources</div>`;
+  list.querySelectorAll(".source-item").forEach(item => item.addEventListener("click", () => openDocumentDetail(item.dataset.documentId)));
+  initLucide();
+}
+
+function documentDepartment(document) {
+  if (document.department) return document.department;
+  const name = `${document.title || ""} ${document.filename || ""}`.toLowerCase();
+  if (name.includes("hr") || name.includes("employee") || name.includes("handbook")) return "HR";
+  if (name.includes("legal") || name.includes("contract") || name.includes("agreement")) return "Legal";
+  if (name.includes("finance") || name.includes("revenue") || name.includes("invoice")) return "Finance";
+  return "General";
+}
+
+async function fetchSystemHealth() {
+  const compact = document.getElementById("system-status-compact");
+  const healthCard = document.querySelector(".health-card");
+  try {
+    const resp = await fetch("/health/ready");
+    const data = await resp.json();
+    const ready = data.status === "ready";
+    const modelStatus = data.checks?.models?.status || "unknown";
+    const qdrantStatus = data.checks?.vector_store?.status || "unknown";
+    if (compact) {
+      compact.innerHTML = `<span class="status-dot ${ready ? "ready" : "loading"}"></span><span>${ready ? "All systems operational" : `Models ${modelStatus}`}</span>`;
+    }
+    if (healthCard) {
+      healthCard.classList.toggle("health-degraded", !ready);
+      healthCard.innerHTML = `<div class="health-header"><span class="pulse-indicator ${ready ? "" : "degraded"}"></span><span class="health-title">${ready ? "Pipeline operational" : "Pipeline starting"}</span></div><div class="health-meta"><span>Backend: <strong>${ready ? "Online" : "Checking"}</strong></span><span>Qdrant: <strong>${qdrantStatus}</strong></span><span>Models: <strong>${modelStatus}</strong></span></div>`;
+    }
+  } catch (error) {
+    if (compact) compact.innerHTML = `<span class="status-dot error"></span><span>System check unavailable</span>`;
+  }
+}
+
+function initDocumentFilters() {
+  ["document-year-filter", "document-type-filter", "document-department-filter", "document-search-filter"].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) element.addEventListener("input", renderDocumentsGrid);
+    if (element) element.addEventListener("change", renderDocumentsGrid);
+  });
+}
+
+function initEvidencePanel() {
+  const close = document.getElementById("btn-close-evidence");
+  if (close) close.addEventListener("click", () => {
+    state.evidenceOpen = false;
+    document.querySelector(".evidence-rail").classList.add("is-hidden");
+    document.querySelector(".chat-layout").classList.add("evidence-hidden");
+  });
+  const open = document.getElementById("btn-open-full-document");
+  if (open) open.addEventListener("click", () => {
+    const citation = state.latestCitations[0];
+    if (citation) openDocumentDetail(citation.document_id);
+  });
+  const confidenceFilter = document.getElementById("evidence-confidence-filter");
+  if (confidenceFilter) confidenceFilter.addEventListener("change", () => renderEvidence(state.latestCitations));
+}
+
+function renderEvidence(citations = []) {
+  state.latestCitations = citations;
+  const list = document.getElementById("evidence-list");
+  const count = document.getElementById("evidence-count");
+  const rail = document.querySelector(".evidence-rail");
+  if (!list) return;
+  if (rail && !state.evidenceOpen) {
+    rail.classList.remove("is-hidden");
+    document.querySelector(".chat-layout").classList.remove("evidence-hidden");
+    state.evidenceOpen = true;
+  }
+  const minimumConfidence = Number(document.getElementById("evidence-confidence-filter")?.value || 0);
+  const visibleCitations = citations.map((citation, index) => ({ citation, index })).filter(item => (item.citation.confidence || item.citation.relevance_score || 0) >= minimumConfidence);
+  if (count) count.textContent = `${visibleCitations.length} passage${visibleCitations.length === 1 ? "" : "s"}`;
+  list.innerHTML = visibleCitations.length ? visibleCitations.map(({ citation, index }) => `
+    <button class="evidence-card" data-evidence-index="${index}" title="Open source passage">
+      <span class="evidence-card-top"><span class="evidence-number">${index + 1}</span><span class="evidence-doc">${escapeHtml(citation.document_name || "Source")}</span><span class="evidence-page">p.${citation.page_number} · ${Math.round((citation.confidence || citation.relevance_score || 0) * 100)}%</span></span>
+      <span class="evidence-excerpt">${escapeHtml(citation.excerpt)}</span><span class="evidence-meter"><span style="width:${Math.min(100, Math.max(8, (citation.confidence || citation.relevance_score || 0) * 100))}%"></span></span>
+    </button>`).join("") : `<div class="evidence-empty"><i data-lucide="quote"></i><span>No passages meet this confidence threshold.</span></div>`;
+  list.querySelectorAll(".evidence-card").forEach(card => card.addEventListener("click", () => {
+    const citation = state.latestCitations[Number(card.dataset.evidenceIndex)];
+    if (citation) openDocumentDetail(citation.document_id, citation.page_number, citation.section_heading);
+  }));
+  initLucide();
+}
+
+function initDocumentDetail() {
+  const overlay = document.getElementById("document-detail-overlay");
+  const close = document.getElementById("btn-close-detail");
+  if (close) close.addEventListener("click", closeDocumentDetail);
+  if (overlay) overlay.addEventListener("click", event => { if (event.target === overlay) closeDocumentDetail(); });
+  document.addEventListener("keydown", event => { if (event.key === "Escape") closeDocumentDetail(); });
+}
+
+async function openDocumentDetail(documentId, pageNumber, sectionHeading) {
+  const overlay = document.getElementById("document-detail-overlay");
+  const body = document.getElementById("detail-body");
+  const doc = state.documents.find(item => String(item.id) === String(documentId));
+  if (!overlay || !body || !doc) return;
+  state.selectedDocumentId = documentId;
+  overlay.classList.add("active");
+  overlay.setAttribute("aria-hidden", "false");
+  document.getElementById("detail-title").textContent = doc.title || doc.filename;
+  document.getElementById("detail-meta").textContent = `${doc.version || "1.0"} · ${doc.file_type.toUpperCase()} · ${doc.page_count} pages · ${doc.chunk_count} sections`;
+  body.innerHTML = `<div class="evidence-empty"><i data-lucide="loader-2" class="spin"></i> Loading extracted sections...</div>`;
+  initLucide();
+  try {
+    const response = await fetch(`${API_BASE}/documents/${documentId}/content`);
+    const data = await response.json();
+    body.innerHTML = data.sections.map(section => `<section class="detail-section ${String(section.page_number) === String(pageNumber) && section.section_heading === sectionHeading ? "is-highlighted" : ""}"><div class="detail-section-top"><span>PAGE ${section.page_number}</span><strong>${escapeHtml(section.section_heading || "General")}</strong></div><p>${escapeHtml(section.text)}</p></section>`).join("") || `<div class="evidence-empty">No extracted sections available.</div>`;
+  } catch (error) {
+    body.innerHTML = `<div class="evidence-empty">Unable to load extracted source content.</div>`;
+  }
+}
+
+function closeDocumentDetail() {
+  const overlay = document.getElementById("document-detail-overlay");
+  if (overlay) { overlay.classList.remove("active"); overlay.setAttribute("aria-hidden", "true"); }
 }
 
 // ----------------- Tab Navigation -----------------
@@ -186,6 +351,7 @@ function appendAssistantMessage(data) {
   const isHighConf = confPct >= 85;
   const totalMs = data.latency_ms?.total_ms || 45;
 
+  const resolveCitationDocumentId = citation => citation.document_id || state.documents.find(doc => (doc.title || doc.filename) === citation.document_name)?.id || "";
   let citationsHtml = "";
   if (data.citations && data.citations.length > 0) {
     citationsHtml = `
@@ -195,11 +361,11 @@ function appendAssistantMessage(data) {
         </div>
         <div class="citation-cards-grid">
           ${data.citations.map(c => `
-            <div class="citation-card" title="Click to view cited section in document">
+              <button class="citation-card" data-document-id="${resolveCitationDocumentId(c)}" data-page-number="${c.page_number}" data-section-heading="${escapeHtml(c.section_heading || "")}" title="Click to view cited section in document">
               <div class="citation-top-row">
                 <span class="citation-doc-name"><i data-lucide="file-text"></i> ${escapeHtml(c.document_name)}</span>
                 <span class="citation-page-badge">Page ${c.page_number}</span>
-              </div>
+              </button>
               <div style="font-size: 0.76rem; color: var(--accent-indigo); margin-bottom: 4px; font-weight: 600;">
                 Section: ${escapeHtml(c.section_heading || 'General')}
               </div>
@@ -230,6 +396,8 @@ function appendAssistantMessage(data) {
 
   container.appendChild(row);
   container.scrollTop = container.scrollHeight;
+  renderEvidence(data.citations || []);
+  row.querySelectorAll(".citation-card").forEach(card => card.addEventListener("click", () => openDocumentDetail(card.dataset.documentId, card.dataset.pageNumber, card.dataset.sectionHeading)));
   initLucide();
 }
 
@@ -280,6 +448,7 @@ async function fetchDocuments() {
     if (resp.ok) {
       state.documents = await resp.json();
       renderDocumentsGrid();
+      renderSourceRail();
       populateDocSelectors();
       updateDocCount();
     }
@@ -295,7 +464,15 @@ function updateDocCount() {
 
 function renderDocumentsGrid() {
   const grid = document.getElementById("documents-grid");
-  if (!state.documents || state.documents.length === 0) {
+  const year = document.getElementById("document-year-filter")?.value || "";
+  const type = document.getElementById("document-type-filter")?.value || "";
+  const department = document.getElementById("document-department-filter")?.value || "";
+  const query = (document.getElementById("document-search-filter")?.value || "").toLowerCase().trim();
+  const documents = (state.documents || []).filter(doc => {
+    const docYear = doc.effective_from ? String(doc.effective_from).slice(0, 4) : "";
+    return (!year || docYear === year) && (!type || doc.file_type === type) && (!department || documentDepartment(doc) === department) && (!query || `${doc.title || ""} ${doc.filename || ""}`.toLowerCase().includes(query));
+  });
+  if (!documents.length) {
     grid.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon"><i data-lucide="folder-open"></i></div>
@@ -307,8 +484,8 @@ function renderDocumentsGrid() {
     return;
   }
 
-  grid.innerHTML = state.documents.map(d => `
-    <div class="doc-tile" id="doc-tile-${d.id}">
+  grid.innerHTML = documents.map(d => `
+    <div class="doc-tile" id="doc-tile-${d.id}" data-document-id="${d.id}" tabindex="0" role="button" aria-label="Open ${escapeHtml(d.title || d.filename)} details">
       <div class="doc-tile-top">
         <div class="doc-tile-icon"><i data-lucide="file-text"></i></div>
         <div class="doc-tile-info">
@@ -322,12 +499,16 @@ function renderDocumentsGrid() {
       <div class="doc-tile-stats">
         <span class="doc-stat-pill"><i data-lucide="book-open"></i> ${d.page_count} Pages</span>
         <span class="doc-stat-pill"><i data-lucide="layers"></i> ${d.chunk_count} Chunks</span>
-        <span class="tag-badge added">Indexed</span>
+        <span class="tag-badge ${d.status === "ready" ? "added" : "modified"}">${escapeHtml(d.status || "pending")}</span>
       </div>
     </div>
   `).join("");
 
   // Attach delete handlers
+  document.querySelectorAll(".doc-tile").forEach(tile => {
+    tile.addEventListener("click", event => { if (!event.target.closest(".btn-delete-doc")) openDocumentDetail(tile.dataset.documentId); });
+    tile.addEventListener("keydown", event => { if ((event.key === "Enter" || event.key === " ") && !event.target.closest(".btn-delete-doc")) { event.preventDefault(); openDocumentDetail(tile.dataset.documentId); } });
+  });
   document.querySelectorAll(".btn-delete-doc").forEach(btn => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
@@ -636,21 +817,38 @@ function initModal() {
     if (version) formData.append("version", version);
     if (dateVal) formData.append("effective_from", dateVal);
 
+    const statusText = document.getElementById("ingestion-status-text");
+    const status = document.getElementById("ingestion-status");
+    const submit = document.getElementById("btn-submit-upload");
+    status?.classList.add("is-active");
+    if (statusText) statusText.textContent = "Uploading source...";
+    if (submit) { submit.disabled = true; submit.innerHTML = `<i data-lucide="loader-2" class="spin"></i> Indexing`; initLucide(); }
+
     try {
-      const resp = await fetch(`${API_BASE}/documents/upload`, {
-        method: "POST",
-        body: formData
+      await uploadWithProgress(formData, (percent, phase) => {
+        if (statusText) statusText.textContent = phase === "upload" ? `Uploading source · ${percent}%` : "Parsing sections and indexing...";
       });
-      if (resp.ok) {
-        modal.classList.remove("active");
-        form.reset();
-        fileLabel.innerText = "Drag & drop your file here or click to browse";
-        fetchDocuments();
-        switchTab("documents", "Document Hub & Ingestion Status");
-      }
+      if (statusText) statusText.textContent = "Indexed and ready";
+      await fetchDocuments();
+      setTimeout(() => { modal.classList.remove("active"); form.reset(); fileLabel.innerText = "Drag & drop your file here or click to browse"; if (submit) { submit.disabled = false; submit.innerHTML = `<i data-lucide="cpu"></i> Start Ingestion`; initLucide(); } }, 500);
     } catch (err) {
-      alert("Error uploading document to backend API");
+      if (statusText) statusText.textContent = "Ingestion failed. Check the file and try again.";
+      if (status) status.classList.add("has-error");
+      if (submit) { submit.disabled = false; submit.innerHTML = `<i data-lucide="rotate-cw"></i> Retry ingestion`; initLucide(); }
     }
+  });
+}
+
+function uploadWithProgress(formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE}/documents/upload`);
+    request.upload.addEventListener("progress", event => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100), "upload");
+    });
+    request.addEventListener("load", () => request.status >= 200 && request.status < 300 ? (onProgress(100, "index"), resolve(JSON.parse(request.responseText))) : reject(new Error("Upload failed")));
+    request.addEventListener("error", () => reject(new Error("Upload failed")));
+    request.send(formData);
   });
 }
 

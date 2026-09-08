@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 import datetime
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks
@@ -7,7 +8,7 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.database.db import get_session
-from app.models.document import Document, DocumentRead
+from app.models.document import Document, DocumentRead, DocumentPage, Chunk
 from app.services.ingestion import ingestion_service
 from app.database.vector_db import vector_db
 
@@ -71,6 +72,43 @@ def get_document(document_id: int, session: Session = Depends(get_session)):
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
+
+
+@router.get("/{document_id}/content")
+def get_document_content(document_id: int, session: Session = Depends(get_session)):
+    """Return extracted pages and indexed sections for source inspection."""
+    doc = session.get(Document, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    pages = session.exec(
+        select(DocumentPage).where(DocumentPage.document_id == document_id).order_by(DocumentPage.page_number)
+    ).all()
+    chunks = session.exec(
+        select(Chunk).where(Chunk.document_id == document_id).order_by(Chunk.chunk_index)
+    ).all()
+    return {
+        "document": DocumentRead.model_validate(doc, from_attributes=True),
+        "pages": [
+            {
+                "page_number": page.page_number,
+                "raw_text": page.raw_text,
+                "ocr_used": page.ocr_used,
+            }
+            for page in pages
+        ],
+        "sections": [
+            {
+                "chunk_id": chunk.id,
+                "page_number": chunk.page_number,
+                "section_heading": chunk.section_heading,
+                "text": chunk.text,
+                "token_count": chunk.token_count,
+                "metadata": json.loads(chunk.metadata_json) if chunk.metadata_json else {},
+            }
+            for chunk in chunks
+        ],
+    }
 
 @router.delete("/{document_id}")
 def delete_document(document_id: int, session: Session = Depends(get_session)):

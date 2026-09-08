@@ -32,6 +32,18 @@
         </div>
       </div>
 
+      <div class="workspace-rail">
+        <div class="rail-heading"><span>CONVERSATIONS</span><button class="rail-new-btn" id="btn-new-conversation" title="New conversation" aria-label="New conversation">+</button></div>
+        <div class="conversation-list" id="conversation-list">
+          <button class="conversation-item active" data-session="M&A Diligence"><span class="conversation-dot"></span><span><strong>M&A Diligence</strong><small>just now</small></span></button>
+          <button class="conversation-item" data-session="Data retention review"><span class="conversation-dot"></span><span><strong>Data retention review</strong><small>2h ago</small></span></button>
+          <button class="conversation-item" data-session="Security audit findings"><span class="conversation-dot"></span><span><strong>Security audit findings</strong><small>3d ago</small></span></button>
+        </div>
+        <div class="rail-heading sources-heading"><span>INDEXED SOURCES</span><span class="source-count" id="rail-source-count">0</span></div>
+        <label class="source-search"><i data-lucide="search"></i><input id="source-search-input" type="search" placeholder="Search documents" aria-label="Search documents"></label>
+        <div class="source-list" id="source-list"></div>
+      </div>
+
       <!-- Navigation Categories -->
       <div class="nav-section-title">CORE CAPABILITIES</div>
       <nav class="nav-menu">
@@ -93,6 +105,8 @@
         </div>
 
         <div class="header-action-group">
+          <div class="system-status-compact" id="system-status-compact" title="System health"><span class="status-dot loading"></span><span>Checking systems</span></div>
+          <button class="btn btn-glass header-invite" type="button"><i data-lucide="user-plus"></i><span>Invite</span></button>
           <button class="btn btn-icon-theme" id="btn-theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme">
             <i data-lucide="sun" id="theme-icon"></i>
             <span id="theme-label">Light mode</span>
@@ -112,6 +126,7 @@
 
       <!-- VIEW TAB 1: Grounded Chat Interface -->
       <section class="tab-view active" id="pane-chat">
+        <div class="chat-layout">
         <div class="chat-workspace">
           <!-- Chat Message Feed -->
           <div class="chat-stream" id="chat-messages">
@@ -192,6 +207,12 @@
             </form>
           </div>
         </div>
+        <aside class="evidence-rail" aria-label="Evidence panel">
+          <div class="evidence-header"><div><strong>Evidence</strong><small id="evidence-count">0 passages</small></div><div class="evidence-actions"><select id="evidence-confidence-filter" class="evidence-filter" aria-label="Minimum evidence confidence"><option value="0">All</option><option value="0.7">70%+</option><option value="0.85">85%+</option><option value="0.95">95%+</option></select><button class="icon-button" id="btn-close-evidence" title="Hide evidence" aria-label="Hide evidence"><i data-lucide="panel-right-close"></i></button></div></div>
+          <div class="evidence-list" id="evidence-list"><div class="evidence-empty"><i data-lucide="quote"></i><span>Ask a question to inspect cited passages.</span></div></div>
+          <button class="btn btn-dark-full" id="btn-open-full-document" type="button"><i data-lucide="book-open"></i> Open full document</button>
+        </aside>
+        </div>
       </section>
 
       <!-- VIEW TAB 2: Document Hub -->
@@ -200,6 +221,12 @@
           <div>
             <h2>Document Hub & Ingestion Status</h2>
             <p>Documents parsed with structure-aware chunking (preserving headings, tables, pages) and indexed in Qdrant.</p>
+          </div>
+          <div class="document-filters" aria-label="Document filters">
+            <select id="document-year-filter" class="deck-select" aria-label="Filter by year"><option value="">All years</option><option value="2024">2024</option><option value="2026">2026</option></select>
+            <select id="document-type-filter" class="deck-select" aria-label="Filter by document type"><option value="">All types</option><option value="pdf">PDF</option><option value="docx">DOCX</option><option value="txt">TXT</option></select>
+            <select id="document-department-filter" class="deck-select" aria-label="Filter by department"><option value="">All departments</option><option value="HR">HR</option><option value="Legal">Legal</option><option value="Finance">Finance</option><option value="General">General</option></select>
+            <input id="document-search-filter" class="form-input compact-filter" type="search" placeholder="Filter sources" aria-label="Filter sources">
           </div>
           <div class="header-action-group">
             <button class="btn btn-outline-danger" id="btn-clear-all-docs">
@@ -414,6 +441,7 @@
       </div>
 
       <form id="upload-form">
+        <div class="ingestion-status" id="ingestion-status" aria-live="polite"><span class="status-dot"></span><span id="ingestion-status-text">Ready to index</span></div>
         <div class="form-group">
           <label>Select Document File (.PDF, .DOCX, .TXT)</label>
           <div class="file-drop-zone" id="file-drop-zone">
@@ -447,6 +475,13 @@
         </div>
       </form>
     </div>
+  </div>
+
+  <div class="document-detail-overlay" id="document-detail-overlay" aria-hidden="true">
+    <article class="document-detail-panel" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+      <div class="document-detail-header"><div><span class="eyebrow">SOURCE DETAIL</span><h2 id="detail-title">Document</h2><p id="detail-meta"></p></div><button class="icon-button" id="btn-close-detail" title="Close document detail" aria-label="Close document detail"><i data-lucide="x"></i></button></div>
+      <div class="detail-body" id="detail-body"><div class="evidence-empty"><i data-lucide="loader-2" class="spin"></i> Loading extracted sections...</div></div>
+    </article>
   </div>
 
   <script src="app.js"></script>
