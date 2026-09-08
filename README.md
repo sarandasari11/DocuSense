@@ -41,7 +41,7 @@ Open http://127.0.0.1:8000.
 Create an OAuth 2.0 **Web application** client in Google Cloud Console. Add this authorized redirect URI for local development:
 
 ```text
-http://127.0.0.1:8000/auth/google/callback
+http://localhost:8000/auth/google/callback
 ```
 
 Set the resulting credentials in `.env`:
@@ -50,7 +50,7 @@ Set the resulting credentials in `.env`:
 SESSION_SECRET=use-a-long-random-secret
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
-GOOGLE_OAUTH_REDIRECT_URI=http://127.0.0.1:8000/auth/google/callback
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8000/auth/google/callback
 AUTH_COOKIE_SECURE=false
 ```
 

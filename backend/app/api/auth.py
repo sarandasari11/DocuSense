@@ -3,11 +3,13 @@ from typing import Optional
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+import logging
 
 from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 oauth = OAuth()
+logger = logging.getLogger("docusense.auth")
 
 if settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET:
     oauth.register(
@@ -50,7 +52,8 @@ async def google_callback(request: Request):
             "picture": userinfo.get("picture"),
         }
         return RedirectResponse(url="/", status_code=303)
-    except Exception:
+    except Exception as exc:
+        logger.exception("Google OAuth callback failed: %s", type(exc).__name__)
         return JSONResponse(status_code=401, content={"detail": "Google authentication failed."})
 
 
