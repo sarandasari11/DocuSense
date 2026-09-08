@@ -1596,9 +1596,54 @@ html[data-theme="light"] .workspace-header .btn.btn-glass:hover {
 .source-list { flex: 1; min-height: 90px; }
 .sidebar { overflow: hidden; }
 .sidebar .nav-menu { flex: 0 0 auto; }
-.sidebar > .nav-section-title,
-.sidebar > .nav-menu,
-.sidebar > .sidebar-footer { display: none; }
+.sidebar > .nav-section-title { display: block; }
+.sidebar > .nav-menu { display: flex; flex: 0 0 auto; }
+.sidebar > .sidebar-footer { display: block; margin-top: auto; }
+
+.workspace-rail + .nav-section-title {
+  margin-top: 8px;
+}
+
+.workspace-rail + .nav-section-title + .nav-menu {
+  gap: 4px;
+}
+
+.workspace-rail + .nav-section-title + .nav-menu .nav-link {
+  padding: 8px 9px;
+  font-size: 0.76rem;
+}
+
+.workspace-rail + .nav-section-title + .nav-menu .nav-section-title {
+  padding-left: 4px;
+  margin-top: 10px !important;
+  font-size: 0.58rem;
+}
+
+.workspace-rail + .nav-section-title + .nav-menu .nav-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.workspace-rail + .nav-section-title + .nav-menu .nav-pill,
+.workspace-rail + .nav-section-title + .nav-menu .nav-counter,
+.workspace-rail + .nav-section-title + .nav-menu .nav-tag {
+  font-size: 0.58rem;
+  padding: 2px 5px;
+}
+
+.workspace-rail + .nav-section-title + .nav-menu + .sidebar-footer .health-card {
+  padding: 10px;
+  border-radius: 9px;
+}
+
+.workspace-rail + .nav-section-title + .nav-menu + .sidebar-footer .health-title {
+  font-size: 0.68rem;
+}
+
+.workspace-rail + .nav-section-title + .nav-menu + .sidebar-footer .health-meta {
+  font-size: 0.58rem;
+  gap: 3px;
+}
 
 .conversation-item, .source-item {
   width: 100%;
