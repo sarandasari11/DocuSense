@@ -1645,6 +1645,48 @@ html[data-theme="light"] .workspace-header .btn.btn-glass:hover {
   gap: 3px;
 }
 
+.sidebar > .nav-section-title {
+  margin-top: 2px;
+  padding-left: 4px;
+  font-size: 0.58rem;
+}
+
+.sidebar > .nav-menu {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.sidebar > .nav-menu .nav-link {
+  padding: 8px 9px;
+  font-size: 0.76rem;
+}
+
+.sidebar > .nav-menu .nav-icon {
+  width: 17px;
+  height: 17px;
+}
+
+.sidebar > .nav-menu .nav-pill,
+.sidebar > .nav-menu .nav-counter,
+.sidebar > .nav-menu .nav-tag {
+  font-size: 0.58rem;
+  padding: 2px 5px;
+}
+
+.source-library {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 90px;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.source-library .source-list {
+  flex: 1 1 auto;
+  min-height: 60px;
+}
+
 .conversation-item, .source-item {
   width: 100%;
   display: flex;

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="style.css?v=sidebar-nav-1">
+  <link rel="stylesheet" href="style.css?v=capabilities-top-1">
   <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
 </head>
 <body>
@@ -30,18 +30,6 @@
           <div class="brand-title">DocuSense<span class="pro-tag">AI</span></div>
           <div class="brand-subtitle">Hybrid & Temporal Intelligence</div>
         </div>
-      </div>
-
-      <div class="workspace-rail">
-        <div class="rail-heading"><span>CONVERSATIONS</span><button class="rail-new-btn" id="btn-new-conversation" title="New conversation" aria-label="New conversation">+</button></div>
-        <div class="conversation-list" id="conversation-list">
-          <button class="conversation-item active" data-session="M&A Diligence"><span class="conversation-dot"></span><span><strong>M&A Diligence</strong><small>just now</small></span></button>
-          <button class="conversation-item" data-session="Data retention review"><span class="conversation-dot"></span><span><strong>Data retention review</strong><small>2h ago</small></span></button>
-          <button class="conversation-item" data-session="Security audit findings"><span class="conversation-dot"></span><span><strong>Security audit findings</strong><small>3d ago</small></span></button>
-        </div>
-        <div class="rail-heading sources-heading"><span>INDEXED SOURCES</span><span class="source-count" id="rail-source-count">0</span></div>
-        <label class="source-search"><i data-lucide="search"></i><input id="source-search-input" type="search" placeholder="Search documents" aria-label="Search documents"></label>
-        <div class="source-list" id="source-list"></div>
       </div>
 
       <!-- Navigation Categories -->
@@ -78,6 +66,24 @@
         </button>
       </nav>
 
+      <!-- Conversation workspace is intentionally disabled for now. -->
+      <!--
+      <div class="workspace-rail">
+        <div class="rail-heading"><span>CONVERSATIONS</span><button class="rail-new-btn" id="btn-new-conversation" title="New conversation" aria-label="New conversation">+</button></div>
+        <div class="conversation-list" id="conversation-list">
+          <button class="conversation-item active" data-session="M&A Diligence"><span class="conversation-dot"></span><span><strong>M&A Diligence</strong><small>just now</small></span></button>
+          <button class="conversation-item" data-session="Data retention review"><span class="conversation-dot"></span><span><strong>Data retention review</strong><small>2h ago</small></span></button>
+          <button class="conversation-item" data-session="Security audit findings"><span class="conversation-dot"></span><span><strong>Security audit findings</strong><small>3d ago</small></span></button>
+        </div>
+      </div>
+      -->
+
+      <div class="source-library">
+        <div class="rail-heading sources-heading"><span>INDEXED SOURCES</span><span class="source-count" id="rail-source-count">0</span></div>
+        <label class="source-search"><i data-lucide="search"></i><input id="source-search-input" type="search" placeholder="Search documents" aria-label="Search documents"></label>
+        <div class="source-list" id="source-list"></div>
+      </div>
+
       <!-- System Health Card in Sidebar Footer -->
       <div class="sidebar-footer">
         <div class="health-card">
@@ -86,9 +92,9 @@
             <span class="health-title">Pipeline Operational</span>
           </div>
           <div class="health-meta">
-            <span>Vector DB: <strong>Qdrant (Local)</strong></span>
-            <span>Reranker: <strong>Cross-Encoder</strong></span>
-            <span>Fusion: <strong>Dense + BM25 (RRF)</strong></span>
+            <span>Vector DB- <strong>Qdrant (Local)</strong></span>
+            <span>Reranker <strong>Cross -Encoder</strong></span>
+            <span>Models <strong>Dense + BM25 (RRF)</strong></span>
           </div>
         </div>
       </div>
