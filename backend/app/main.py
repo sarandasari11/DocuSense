@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
@@ -16,7 +17,7 @@ from app.database.db import check_database, init_db
 from app.database.vector_db import vector_db
 from app.services.embeddings import embedding_service
 from app.services.reranker import reranker_service
-from app.api import documents, search, chat, compare, analytics
+from app.api import documents, search, chat, compare, analytics, auth
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -59,6 +60,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SESSION_SECRET,
+    session_cookie="docusense_session",
+    https_only=settings.AUTH_COOKIE_SECURE,
+    same_site="lax",
+    max_age=60 * 60 * 24 * 7,
+)
+
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
@@ -95,6 +105,7 @@ app.include_router(search.router, prefix="/api/v1")
 app.include_router(chat.router, prefix="/api/v1")
 app.include_router(compare.router, prefix="/api/v1")
 app.include_router(analytics.router, prefix="/api/v1")
+app.include_router(auth.router)
 
 # Static frontend directory configuration
 frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))

@@ -27,8 +27,36 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchDocuments();
   fetchAnalytics();
   fetchSystemHealth();
+  initAuth();
   window.setInterval(fetchSystemHealth, 30000);
 });
+
+async function initAuth() {
+  const button = document.getElementById("auth-button");
+  if (!button) return;
+  try {
+    const response = await fetch("/auth/me", { credentials: "same-origin" });
+    const data = await response.json();
+    if (data.authenticated && data.user) {
+      button.innerHTML = `<i data-lucide="user-check"></i><span>${escapeHtml(data.user.name || data.user.email || "Signed in")}</span>`;
+      button.title = "Sign out";
+      button.setAttribute("aria-label", "Sign out");
+      button.onclick = async () => {
+        await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
+        window.location.reload();
+      };
+    } else {
+      button.innerHTML = `<i data-lucide="log-in"></i><span>Sign in with Google</span>`;
+      button.title = "Sign in with Google";
+      button.setAttribute("aria-label", "Sign in with Google");
+      button.onclick = () => { window.location.href = "/auth/google"; };
+    }
+    initLucide();
+  } catch (error) {
+    button.disabled = true;
+    button.title = "Authentication unavailable";
+  }
+}
 
 function initTheme() {
   const savedTheme = localStorage.getItem("docusense-theme") || "light";

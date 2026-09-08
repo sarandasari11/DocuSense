@@ -36,6 +36,26 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 Open http://127.0.0.1:8000.
 
+## Google OAuth login
+
+Create an OAuth 2.0 **Web application** client in Google Cloud Console. Add this authorized redirect URI for local development:
+
+```text
+http://127.0.0.1:8000/auth/google/callback
+```
+
+Set the resulting credentials in `.env`:
+
+```env
+SESSION_SECRET=use-a-long-random-secret
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_OAUTH_REDIRECT_URI=http://127.0.0.1:8000/auth/google/callback
+AUTH_COOKIE_SECURE=false
+```
+
+The UI sign-in button starts the server-side OAuth flow. Google never exposes the client secret to the browser. After callback, DocuSense stores the verified user identity in a signed, HTTP-only session cookie. In production, use an HTTPS callback URL and set `AUTH_COOKIE_SECURE=true`.
+
 Development uses `MODEL_RUNTIME_MODE=deterministic` by default, so the first query does not download model weights. Production switches to `pretrained`; embedding and reranker loading starts once during application startup and reports `loading` through `/health/ready` until complete.
 
 ## Production

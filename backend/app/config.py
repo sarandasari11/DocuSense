@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     MODEL_RUNTIME_MODE: str = "deterministic"
     MODEL_PRELOAD: bool = True
     MODEL_LOAD_TIMEOUT_SECONDS: float = 120.0
+    SESSION_SECRET: str = "dev-only-change-me"
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_OAUTH_REDIRECT_URI: str = "http://127.0.0.1:8000/auth/google/callback"
+    AUTH_COOKIE_SECURE: bool = False
     
     # Storage & DB
     DATABASE_URL: str = "sqlite:///./docusense.db"
@@ -69,6 +74,9 @@ class Settings(BaseSettings):
             self.DEBUG = False
             if self.MODEL_RUNTIME_MODE == "deterministic":
                 self.MODEL_RUNTIME_MODE = "pretrained"
+            if self.SESSION_SECRET == "dev-only-change-me":
+                raise ValueError("Production requires a unique SESSION_SECRET")
+            self.AUTH_COOKIE_SECURE = True
 
         if self.MODEL_RUNTIME_MODE not in {"deterministic", "pretrained"}:
             raise ValueError("MODEL_RUNTIME_MODE must be deterministic or pretrained")
