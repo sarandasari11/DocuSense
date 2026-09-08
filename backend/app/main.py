@@ -42,9 +42,15 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}...")
     init_db()
+    if settings.MODEL_PRELOAD:
+        embedding_service.start_loading()
+        reranker_service.start_loading()
+        logger.info("Model warmup started in %s mode", settings.MODEL_RUNTIME_MODE)
     yield
     # Shutdown
     logger.info(f"Shutting down {settings.APP_NAME}...")
+    # Model loaders are daemon threads. Do not join them during reload or shutdown;
+    # in-flight downloads must not hold the server process open.
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -125,13 +131,18 @@ def liveness_check():
 
 @app.get("/health/ready", tags=["Health"])
 def readiness_check():
+    embedding_status = embedding_service.status()
+    reranker_status = reranker_service.status()
+    model_states = {embedding_status["status"], reranker_status["status"]}
+    model_status = "error" if "failed" in model_states else ("ok" if model_states == {"ok"} else "loading")
     checks = {
         "database": check_database(),
         "vector_store": vector_db.health_check(),
         "models": {
-            "status": "ok",
-            "embedding": {"configured": bool(settings.EMBEDDING_MODEL), "loaded": embedding_service._model is not None},
-            "reranker": {"configured": bool(settings.RERANKER_MODEL), "loaded": reranker_service._model is not None},
+            "status": model_status,
+            "mode": settings.MODEL_RUNTIME_MODE,
+            "embedding": embedding_status,
+            "reranker": reranker_status,
         },
     }
     ready = all(check["status"] == "ok" for check in checks.values())

@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
     CORS_ORIGINS: str = "http://localhost:8000,http://127.0.0.1:8000"
+    MODEL_RUNTIME_MODE: str = "deterministic"
+    MODEL_PRELOAD: bool = True
+    MODEL_LOAD_TIMEOUT_SECONDS: float = 120.0
     
     # Storage & DB
     DATABASE_URL: str = "sqlite:///./docusense.db"
@@ -64,6 +67,11 @@ class Settings(BaseSettings):
             if not self.QDRANT_URL:
                 raise ValueError("Production requires QDRANT_URL")
             self.DEBUG = False
+            if self.MODEL_RUNTIME_MODE == "deterministic":
+                self.MODEL_RUNTIME_MODE = "pretrained"
+
+        if self.MODEL_RUNTIME_MODE not in {"deterministic", "pretrained"}:
+            raise ValueError("MODEL_RUNTIME_MODE must be deterministic or pretrained")
 
         if self.APP_ENV != "production" and self.APP_ENV != "test":
             self.DEBUG = True

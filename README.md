@@ -10,6 +10,7 @@ DocuSense is a context-aware document intelligence platform for grounded chat, p
 - Qdrant for vector search
 - Hybrid dense and BM25 retrieval with optional cross-encoder reranking
 - Alembic database migrations
+- Deterministic development embeddings with startup model warmup controls
 
 ## Run locally
 
@@ -34,6 +35,8 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Open http://127.0.0.1:8000.
+
+Development uses `MODEL_RUNTIME_MODE=deterministic` by default, so the first query does not download model weights. Production switches to `pretrained`; embedding and reranker loading starts once during application startup and reports `loading` through `/health/ready` until complete.
 
 ## Production
 
