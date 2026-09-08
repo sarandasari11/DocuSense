@@ -132,14 +132,21 @@ class CitationRead(BaseModel):
     section_heading: Optional[str] = None
     excerpt: str
     relevance_score: float
+    confidence: float = 0.0
+    retrieval_explanation: str = ""
+    document_version: Optional[str] = None
+    effective_from: Optional[datetime.date] = None
+    effective_until: Optional[datetime.date] = None
 
 class ChatRequest(BaseModel):
     question: str
     conversation_id: Optional[int] = None
     document_ids: Optional[List[int]] = None
     temporal_filter_year: Optional[int] = None
+    document_versions: Optional[List[str]] = None
     use_reranker: bool = True
     use_hybrid: bool = True
+    answer_only_from_documents: bool = True
 
 class ChatResponse(BaseModel):
     answer: str
@@ -148,11 +155,14 @@ class ChatResponse(BaseModel):
     citations: List[CitationRead]
     latency_ms: Dict[str, float]
     retrieved_chunks_count: int
+    rewritten_query: Optional[str] = None
+    retrieval_explanation: Optional[str] = None
 
 class SearchQuery(BaseModel):
     query: str
     document_ids: Optional[List[int]] = None
     year: Optional[int] = None
+    versions: Optional[List[str]] = None
     top_k: int = 5
     mode: str = "hybrid"  # "dense" | "sparse" | "hybrid"
 
@@ -165,6 +175,10 @@ class SearchResultItem(BaseModel):
     text: str
     score: float
     retrieval_source: str  # "dense", "sparse", "reranked"
+    retrieval_explanation: str = ""
+    document_version: Optional[str] = None
+    effective_from: Optional[datetime.date] = None
+    effective_until: Optional[datetime.date] = None
 
 class CompareRequest(BaseModel):
     doc_a_id: int

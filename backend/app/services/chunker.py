@@ -1,5 +1,6 @@
 import json
 import re
+import datetime
 from typing import List, Dict, Any, Optional
 from app.services.parser import ParsedPage
 
@@ -30,13 +31,53 @@ class StructureAwareChunker:
     def _approx_tokens(self, text: str) -> int:
         return len(text.split())
 
+    def _split_text(self, content: str, is_table: bool) -> List[str]:
+        if is_table:
+            rows = [row.strip() for row in content.splitlines() if row.strip()]
+            pieces: List[str] = []
+            current: List[str] = []
+            current_tokens = 0
+            for row in rows:
+                row_tokens = self._approx_tokens(row)
+                if current and current_tokens + row_tokens > self.target_chunk_size:
+                    pieces.append("\n".join(current))
+                    current = []
+                    current_tokens = 0
+                current.append(row)
+                current_tokens += row_tokens
+            if current:
+                pieces.append("\n".join(current))
+            return pieces
+
+        sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", content.replace("\n", " ")) if part.strip()]
+        if not sentences:
+            return [content.strip()]
+
+        pieces: List[str] = []
+        current: List[str] = []
+        current_tokens = 0
+        for sentence in sentences:
+            sentence_tokens = self._approx_tokens(sentence)
+            if current and current_tokens + sentence_tokens > self.target_chunk_size:
+                pieces.append(" ".join(current))
+                overlap = current[-1:] if self.chunk_overlap else []
+                current = overlap + [sentence]
+                current_tokens = sum(self._approx_tokens(item) for item in current)
+            else:
+                current.append(sentence)
+                current_tokens += sentence_tokens
+        if current:
+            pieces.append(" ".join(current))
+        return pieces
+
     def chunk_document(
         self,
         document_id: int,
         document_title: str,
         document_version: str,
-        effective_year: Optional[int],
-        pages: List[ParsedPage]
+        effective_from: Optional[datetime.date],
+        pages: List[ParsedPage],
+        effective_until: Optional[datetime.date] = None
     ) -> List[StructuredChunk]:
         """
         Produce structure-aware chunks that maintain section context,
@@ -54,17 +95,21 @@ class StructureAwareChunker:
                 if not content:
                     continue
 
-                # If it is a table or short section, keep it intact
-                if is_table or self._approx_tokens(content) <= self.target_chunk_size:
-                    chunk_text = f"[{heading}]\n{content}" if heading != "General" else content
+                for piece in self._split_text(content, is_table):
+                    chunk_text = f"[{heading}]\n{piece}" if heading != "General" else piece
                     meta = {
                         "document_id": document_id,
                         "document_title": document_title,
                         "document_version": document_version,
+                        "version": document_version,
                         "page_number": page.page_number,
+                        "source_page": page.page_number,
                         "section": heading,
-                        "year": effective_year,
-                        "is_table": is_table
+                        "section_heading": heading,
+                        "effective_from": effective_from.isoformat() if effective_from else None,
+                        "effective_until": effective_until.isoformat() if effective_until else None,
+                        "year": effective_from.year if effective_from else None,
+                        "is_table": is_table,
                     }
                     chunks.append(StructuredChunk(
                         document_id=document_id,
@@ -76,67 +121,6 @@ class StructureAwareChunker:
                         metadata=meta
                     ))
                     global_chunk_idx += 1
-                else:
-                    # Paragraph / Sentence-based splitting for long sections
-                    paragraphs = [p.strip() for p in content.split("\n") if p.strip()]
-                    if not paragraphs:
-                        paragraphs = re.split(r'(?<=[.?!])\s+', content)
-
-                    current_piece = []
-                    current_tokens = 0
-
-                    for p in paragraphs:
-                        p_tokens = self._approx_tokens(p)
-                        if current_tokens + p_tokens > self.target_chunk_size and current_piece:
-                            full_piece_text = " ".join(current_piece)
-                            chunk_text = f"[{heading}]\n{full_piece_text}" if heading != "General" else full_piece_text
-                            meta = {
-                                "document_id": document_id,
-                                "document_title": document_title,
-                                "document_version": document_version,
-                                "page_number": page.page_number,
-                                "section": heading,
-                                "year": effective_year,
-                                "is_table": False
-                            }
-                            chunks.append(StructuredChunk(
-                                document_id=document_id,
-                                page_number=page.page_number,
-                                chunk_index=global_chunk_idx,
-                                section_heading=heading,
-                                text=chunk_text,
-                                token_count=self._approx_tokens(chunk_text),
-                                metadata=meta
-                            ))
-                            global_chunk_idx += 1
-                            current_piece = [p]
-                            current_tokens = p_tokens
-                        else:
-                            current_piece.append(p)
-                            current_tokens += p_tokens
-
-                    if current_piece:
-                        full_piece_text = " ".join(current_piece)
-                        chunk_text = f"[{heading}]\n{full_piece_text}" if heading != "General" else full_piece_text
-                        meta = {
-                            "document_id": document_id,
-                            "document_title": document_title,
-                            "document_version": document_version,
-                            "page_number": page.page_number,
-                            "section": heading,
-                            "year": effective_year,
-                            "is_table": False
-                        }
-                        chunks.append(StructuredChunk(
-                            document_id=document_id,
-                            page_number=page.page_number,
-                            chunk_index=global_chunk_idx,
-                            section_heading=heading,
-                            text=chunk_text,
-                            token_count=self._approx_tokens(chunk_text),
-                            metadata=meta
-                        ))
-                        global_chunk_idx += 1
 
         return chunks
 

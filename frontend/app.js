@@ -115,6 +115,7 @@ function initChat() {
     const yearFilter = document.getElementById("temporal-year-filter").value;
     const useHybrid = document.getElementById("toggle-hybrid").checked;
     const useReranker = document.getElementById("toggle-rerank").checked;
+    const answerOnlyFromDocuments = document.getElementById("toggle-doc-only").checked;
 
     const loadingId = appendLoadingPlaceholder();
 
@@ -127,7 +128,8 @@ function initChat() {
           conversation_id: state.conversationId,
           temporal_filter_year: yearFilter ? parseInt(yearFilter) : null,
           use_hybrid: useHybrid,
-          use_reranker: useReranker
+          use_reranker: useReranker,
+          answer_only_from_documents: answerOnlyFromDocuments
         })
       });
 
@@ -220,6 +222,7 @@ function appendAssistantMessage(data) {
           <i data-lucide="zap"></i> ${totalMs} ms (${data.retrieved_chunks_count} chunks reranked)
         </div>
       </div>
+      ${data.retrieval_explanation ? `<div class="latency-metrics-tag"><i data-lucide="info"></i> ${escapeHtml(data.retrieval_explanation)}</div>` : ""}
       <div class="msg-body-content">${escapeHtml(data.answer)}</div>
       ${citationsHtml}
     </div>

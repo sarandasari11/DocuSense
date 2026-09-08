@@ -86,6 +86,25 @@ class DocumentParser:
                     "is_table": False
                 })
 
+            # Keep detected PDF tables separate from surrounding prose.
+            try:
+                tables = page.find_tables().tables
+                for table_index, table in enumerate(tables, 1):
+                    rows = table.extract()
+                    table_lines = []
+                    for row in rows or []:
+                        values = [str(value or "").strip() for value in row]
+                        if any(values):
+                            table_lines.append(" | ".join(values))
+                    if table_lines:
+                        sections.append({
+                            "heading": f"{current_heading} (Table {table_index})",
+                            "content": "\n".join(table_lines),
+                            "is_table": True
+                        })
+            except Exception as exc:
+                logger.debug("PDF table extraction unavailable on page %s: %s", page_number, exc)
+
             if not sections and raw_text:
                 sections.append({
                     "heading": "General",

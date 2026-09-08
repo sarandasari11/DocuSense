@@ -83,8 +83,10 @@ class VectorDBManager:
         year: Optional[int] = None
     ) -> List[Any]:
         """Search vector database with optional document and temporal metadata filters."""
+        if document_ids == []:
+            return []
         must_filters = []
-        if document_ids:
+        if document_ids is not None:
             must_filters.append(
                 models.FieldCondition(
                     key="document_id",

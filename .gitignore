@@ -16,6 +16,7 @@ __pycache__/
 *.sqlite3
 backend/storage/*
 eval/storage/*
+storage/
 
 # Model and tool caches
 .cache/

@@ -21,4 +21,26 @@ class TemporalQueryAnalyzer:
 
         return query, target_year
 
+    @staticmethod
+    def rewrite_query(query: str) -> str:
+        """Expand underspecified questions before retrieval without inventing facts."""
+        normalized = re.sub(r"\s+", " ", query).strip()
+        lowered = normalized.lower()
+
+        replacements = {
+            "what about it": "what does the document policy say about this topic",
+            "what about that": "what does the document policy say about that topic",
+            "how much": "what amount or allowance",
+            "how many": "what number of days or units",
+            "tell me more": "summarize the policy requirements and eligibility",
+        }
+        for source, replacement in replacements.items():
+            if source in lowered:
+                normalized = re.sub(re.escape(source), replacement, normalized, flags=re.IGNORECASE)
+                lowered = normalized.lower()
+
+        if len(normalized.split()) <= 3:
+            normalized = f"{normalized} policy requirements, eligibility, limits, and effective version"
+        return normalized
+
 temporal_analyzer = TemporalQueryAnalyzer()

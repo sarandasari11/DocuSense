@@ -56,69 +56,68 @@ def run_benchmark():
     with open(dataset_path, "r") as f:
         qa_pairs = json.load(f)
 
-    results = {
-        "baseline_rag": {"correct_citations": 0, "avg_latency_ms": 0, "total": len(qa_pairs)},
-        "improved_rag": {"correct_citations": 0, "avg_latency_ms": 0, "total": len(qa_pairs)},
-        "docusense_proposed": {"correct_citations": 0, "avg_latency_ms": 0, "total": len(qa_pairs)}
-    }
+    def expected_documents(item):
+        if item["relevant_doc"] == "Both":
+            return {"HR Policy 2024", "HR Policy 2026"}
+        return {item["relevant_doc"]}
+
+    def evaluate_mode(mode):
+        total_precision = 0.0
+        total_recall = 0.0
+        total_latency = 0.0
+        reciprocal_rank = 0.0
+        for item in qa_pairs:
+            started = time.time()
+            if mode == "hybrid":
+                candidates = hybrid_retriever.hybrid_search(
+                    item["question"], limit=5, year=item.get("target_year")
+                )
+                names = [candidate.document_name for candidate in candidates]
+            elif mode == "dense":
+                results = hybrid_retriever.search_dense(
+                    item["question"], limit=5, year=item.get("target_year")
+                )
+                names = [result["document_name"] for result in results]
+            else:
+                results = hybrid_retriever.search_sparse_bm25(
+                    item["question"], limit=5, year=item.get("target_year")
+                )
+                names = [result["document_name"] for result in results]
+
+            expected = expected_documents(item)
+            hits = [name for name in names if name in expected]
+            total_precision += len(hits) / len(names) if names else 0.0
+            total_recall += len(set(hits)) / len(expected)
+            for rank, name in enumerate(names, 1):
+                if name in expected:
+                    reciprocal_rank += 1 / rank
+                    break
+            total_latency += (time.time() - started) * 1000
+
+        count = len(qa_pairs)
+        return {
+            "precision_at_5": round(total_precision / count, 3),
+            "recall_at_5": round(total_recall / count, 3),
+            "mrr": round(reciprocal_rank / count, 3),
+            "avg_latency_ms": round(total_latency / count, 2),
+            "total": count,
+        }
 
     print("==================================================================")
     print("      DOCUSENSE EXPERIMENTAL BENCHMARKING (RESEARCH EVALUATION)    ")
     print("==================================================================")
 
-    # 1. Evaluate Proposed DocuSense
-    t_start = time.time()
-    for item in qa_pairs:
-        resp = rag_engine.answer_query(
-            query=item["question"],
-            conversation_id=999,
-            year=item.get("target_year"),
-            use_reranker=True,
-            use_hybrid=True
-        )
-        if resp.citations:
-            results["docusense_proposed"]["correct_citations"] += 1
-    total_time = (time.time() - t_start) * 1000
-    results["docusense_proposed"]["avg_latency_ms"] = round(total_time / len(qa_pairs), 2)
-
-    # 2. Simulate Baseline RAG (Dense Only, No Temporal Filter, No Reranker)
-    t_start = time.time()
-    for item in qa_pairs:
-        resp = rag_engine.answer_query(
-            query=item["question"],
-            conversation_id=999,
-            year=None,
-            use_reranker=False,
-            use_hybrid=False
-        )
-        # Baseline misses exact keyword IDs and wrong temporal versions
-        if resp.citations and item["category"] != "exact_keyword_lookup":
-            results["baseline_rag"]["correct_citations"] += 1
-    total_time = (time.time() - t_start) * 1000
-    results["baseline_rag"]["avg_latency_ms"] = round(total_time / len(qa_pairs), 2)
-
-    # 3. Simulate Improved RAG (Dense Only + Reranker, No Temporal Filter)
-    t_start = time.time()
-    for item in qa_pairs:
-        resp = rag_engine.answer_query(
-            query=item["question"],
-            conversation_id=999,
-            year=None,
-            use_reranker=True,
-            use_hybrid=False
-        )
-        if resp.citations and item["category"] != "exact_keyword_lookup":
-            results["improved_rag"]["correct_citations"] += 1
-    total_time = (time.time() - t_start) * 1000
-    results["improved_rag"]["avg_latency_ms"] = round(total_time / len(qa_pairs), 2)
+    results = {mode: evaluate_mode(mode) for mode in ("dense", "bm25", "hybrid")}
 
     print("\n--- Comparative Experimental Results ---")
-    print(f"{'Architecture':<28} | {'Citation Recall':<16} | {'Avg Latency (ms)':<16}")
-    print("-" * 68)
+    print(f"{'Retriever':<16} | {'Precision@5':<14} | {'Recall@5':<12} | {'MRR':<8} | {'Avg Latency (ms)':<16}")
+    print("-" * 78)
     
     for name, stats in results.items():
-        recall_pct = f"{(stats['correct_citations'] / stats['total']) * 100:.1f}%"
-        print(f"{name:<28} | {recall_pct:<16} | {stats['avg_latency_ms']:<16}")
+        print(f"{name:<16} | {stats['precision_at_5']:<14.3f} | {stats['recall_at_5']:<12.3f} | {stats['mrr']:<8.3f} | {stats['avg_latency_ms']:<16}")
+
+    print("\nJSON metrics:")
+    print(json.dumps(results, indent=2))
 
     print("==================================================================")
 

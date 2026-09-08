@@ -13,7 +13,8 @@ def search_documents(payload: SearchQuery):
             query=payload.query,
             limit=payload.top_k,
             document_ids=payload.document_ids,
-            year=payload.year
+            year=payload.year,
+            versions=payload.versions
         )
         return [
             SearchResultItem(
@@ -24,7 +25,11 @@ def search_documents(payload: SearchQuery):
                 section_heading=r["section_heading"],
                 text=r["text"],
                 score=r["score"],
-                retrieval_source="dense"
+                retrieval_source="dense",
+                document_version=r.get("document_version"),
+                effective_from=r.get("effective_from"),
+                effective_until=r.get("effective_until"),
+                retrieval_explanation="Matched dense semantic retrieval"
             )
             for r in results
         ]
@@ -33,7 +38,8 @@ def search_documents(payload: SearchQuery):
             query=payload.query,
             limit=payload.top_k,
             document_ids=payload.document_ids,
-            year=payload.year
+            year=payload.year,
+            versions=payload.versions
         )
         return [
             SearchResultItem(
@@ -44,7 +50,11 @@ def search_documents(payload: SearchQuery):
                 section_heading=r["section_heading"],
                 text=r["text"],
                 score=r["score"],
-                retrieval_source="sparse_bm25"
+                retrieval_source="sparse_bm25",
+                document_version=r.get("document_version"),
+                effective_from=r.get("effective_from"),
+                effective_until=r.get("effective_until"),
+                retrieval_explanation="Matched BM25 keyword retrieval"
             )
             for r in results
         ]
@@ -53,7 +63,8 @@ def search_documents(payload: SearchQuery):
             query=payload.query,
             limit=payload.top_k,
             document_ids=payload.document_ids,
-            year=payload.year
+            year=payload.year,
+            versions=payload.versions
         )
         return [
             SearchResultItem(
@@ -64,7 +75,11 @@ def search_documents(payload: SearchQuery):
                 section_heading=c.section_heading,
                 text=c.text,
                 score=c.score,
-                retrieval_source=c.source
+                retrieval_source=c.source,
+                document_version=c.document_version,
+                effective_from=c.effective_from,
+                effective_until=c.effective_until,
+                retrieval_explanation=c.retrieval_explanation
             )
             for c in candidates
         ]

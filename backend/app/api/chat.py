@@ -38,8 +38,10 @@ def chat_with_documents(payload: ChatRequest, session: Session = Depends(get_ses
         conversation_id=conv.id,
         document_ids=payload.document_ids,
         year=payload.temporal_filter_year,
+        versions=payload.document_versions,
         use_reranker=payload.use_reranker,
-        use_hybrid=payload.use_hybrid
+        use_hybrid=payload.use_hybrid,
+        answer_only_from_documents=payload.answer_only_from_documents
     )
 
     # Save Assistant message

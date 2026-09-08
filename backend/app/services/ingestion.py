@@ -46,12 +46,12 @@ class IngestionService:
                 session.commit()
 
                 # Step 2: Structure-Aware Chunking
-                effective_year = doc.effective_from.year if doc.effective_from else None
                 structured_chunks = chunker.chunk_document(
                     document_id=doc.id,
                     document_title=doc.title or doc.filename,
                     document_version=doc.version or "1.0",
-                    effective_year=effective_year,
+                    effective_from=doc.effective_from,
+                    effective_until=doc.effective_until,
                     pages=pages
                 )
 
@@ -89,11 +89,17 @@ class IngestionService:
                     payload = {
                         "document_id": doc.id,
                         "document_name": doc.title or doc.filename,
-                        "version": doc.version,
+                        "version": doc.version or "1.0",
+                        "document_version": doc.version or "1.0",
                         "page_number": c.page_number,
+                        "source_page": c.page_number,
                         "section_heading": c.section_heading,
+                        "section": c.section_heading,
                         "text": c.text,
-                        "year": effective_year,
+                        "effective_from": doc.effective_from.isoformat() if doc.effective_from else None,
+                        "effective_until": doc.effective_until.isoformat() if doc.effective_until else None,
+                        "year": doc.effective_from.year if doc.effective_from else None,
+                        "is_table": bool(c.metadata.get("is_table")),
                         "chunk_index": c.chunk_index
                     }
 
