@@ -54,6 +54,13 @@ async def google_callback(request: Request):
         return RedirectResponse(url="/", status_code=303)
     except Exception as exc:
         logger.exception("Google OAuth callback failed: %s", type(exc).__name__)
+        if type(exc).__name__ == "MismatchingStateError":
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "OAuth login expired or the callback used a different host. Start a new login from http://localhost:8000 and do not use an older Google callback tab."
+                },
+            )
         return JSONResponse(status_code=401, content={"detail": "Google authentication failed."})
 
 
