@@ -130,6 +130,20 @@ def serve_js():
     js_path = os.path.join(frontend_dir, "app.js")
     return FileResponse(js_path, media_type="application/javascript", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
+@app.get("/logo.png")
+def serve_logo():
+    logo_path = os.path.join(frontend_dir, "logo.png")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/png")
+    return JSONResponse(status_code=404, content={"message": "Logo not found"})
+
+@app.get("/favicon.ico")
+def serve_favicon():
+    logo_path = os.path.join(frontend_dir, "logo.png")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/png")
+    return JSONResponse(status_code=404, content={"message": "Favicon not found"})
+
 @app.get("/health/live", tags=["Health"])
 def liveness_check():
     return {
