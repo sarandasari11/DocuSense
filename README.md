@@ -32,6 +32,8 @@ Start the development server:
 ```powershell
 Set-Location backend
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+$processes = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" | Where-Object { $_.CommandLine -match 'uvicorn.*app.main|multiprocessing.spawn' }; $processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; python -m uvicorn app.main:app --app-dir D:\DIS\backend --host localhost --port 8000
 ```
 
 Open http://127.0.0.1:8000.

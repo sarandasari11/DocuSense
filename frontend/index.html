@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="style.css?v=capabilities-top-1">
+  <link rel="stylesheet" href="style.css?v=v2-custom-modal">
   <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
 </head>
 <body>
@@ -490,6 +490,33 @@
     </article>
   </div>
 
-  <script src="app.js?v=google-oauth-1"></script>
+  <!-- Custom Reusable Confirmation Modal -->
+  <div class="modal-overlay" id="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" style="z-index: 1100;">
+    <div class="modal-window confirm-modal-window">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-icon confirm-modal-icon" id="confirm-modal-icon">
+            <i data-lucide="alert-triangle"></i>
+          </div>
+          <div>
+            <h3 id="confirm-modal-title">Confirm Action</h3>
+            <p id="confirm-modal-message">Are you sure you want to proceed?</p>
+          </div>
+        </div>
+        <button class="btn-modal-close" id="btn-close-confirm" type="button" aria-label="Close dialog"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-footer confirm-modal-footer">
+        <button type="button" class="btn btn-glass" id="btn-cancel-confirm">Cancel</button>
+        <button type="button" class="btn btn-danger-gradient" id="btn-accept-confirm">
+          <span>Confirm</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <script src="app.js?v=v2-custom-modal"></script>
 </body>
 </html>

@@ -117,18 +117,18 @@ if os.path.exists(frontend_dir):
 def serve_root():
     index_path = os.path.join(frontend_dir, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"message": "DocuSense API running. Frontend folder not found."}
 
 @app.get("/style.css")
 def serve_css():
     css_path = os.path.join(frontend_dir, "style.css")
-    return FileResponse(css_path, media_type="text/css")
+    return FileResponse(css_path, media_type="text/css", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/app.js")
 def serve_js():
     js_path = os.path.join(frontend_dir, "app.js")
-    return FileResponse(js_path, media_type="application/javascript")
+    return FileResponse(js_path, media_type="application/javascript", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 @app.get("/health/live", tags=["Health"])
 def liveness_check():

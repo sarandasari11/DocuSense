@@ -541,7 +541,18 @@ function renderDocumentsGrid() {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
       const docId = btn.getAttribute("data-id");
-      if (!confirm(`Are you sure you want to delete this document and remove its embeddings from Qdrant?`)) return;
+      const docObj = state.documents.find(d => String(d.id) === String(docId));
+      const docTitle = docObj ? (docObj.title || docObj.filename) : "this document";
+
+      const confirmed = await showConfirmModal({
+        title: "Delete Document",
+        message: `Are you sure you want to delete "${docTitle}" and permanently remove its embeddings from Qdrant?`,
+        confirmText: "Delete Document",
+        cancelText: "Cancel",
+        confirmType: "danger",
+        icon: "trash-2"
+      });
+      if (!confirmed) return;
 
       try {
         const resp = await fetch(`${API_BASE}/documents/${docId}`, {
@@ -553,6 +564,9 @@ function renderDocumentsGrid() {
           populateDocSelectors();
           updateDocCount();
           fetchAnalytics();
+          showToast(`Deleted "${docTitle}" and removed all vector embeddings.`, "success");
+        } else {
+          showToast("Failed to delete document from server.", "error");
         }
       } catch (err) {
         state.documents = state.documents.filter(doc => String(doc.id) !== String(docId));
@@ -560,6 +574,7 @@ function renderDocumentsGrid() {
         populateDocSelectors();
         updateDocCount();
         fetchAnalytics();
+        showToast(`Removed "${docTitle}" from local view.`, "info");
       }
     });
   });
@@ -573,25 +588,37 @@ function initClearAll() {
 
   btnClearAll.addEventListener("click", async () => {
     if (!state.documents || state.documents.length === 0) {
-      alert("No documents to clear.");
+      showToast("No documents found in the database to clear.", "info");
       return;
     }
 
-    if (!confirm("Are you sure you want to remove ALL documents and clear the Qdrant index?")) return;
+    const confirmed = await showConfirmModal({
+      title: "Clear Entire Document Index",
+      message: `Are you sure you want to remove ALL (${state.documents.length}) documents and clear the entire Qdrant vector index? This action cannot be undone.`,
+      confirmText: "Clear All Documents",
+      cancelText: "Cancel",
+      confirmType: "danger",
+      icon: "alert-triangle"
+    });
+    if (!confirmed) return;
 
     try {
-      await fetch(`${API_BASE}/documents`, { method: "DELETE" });
+      const resp = await fetch(`${API_BASE}/documents`, { method: "DELETE" });
       state.documents = [];
       renderDocumentsGrid();
       populateDocSelectors();
       updateDocCount();
       fetchAnalytics();
+      if (resp.ok) {
+        showToast("All documents and vector embeddings cleared successfully.", "success");
+      }
     } catch (e) {
       state.documents = [];
       renderDocumentsGrid();
       populateDocSelectors();
       updateDocCount();
       fetchAnalytics();
+      showToast("Cleared document view.", "info");
     }
   });
 }
@@ -880,20 +907,232 @@ function uploadWithProgress(formData, onProgress) {
   });
 }
 
+const DEMO_FILES = [
+  {
+    filename: "HR_Policy_2024.txt",
+    title: "HR Policy 2024",
+    version: "2024.1",
+    effective_from: "2024-01-01",
+    content: `ACME GLOBAL ENTERPRISES
+EMPLOYEE HANDBOOK AND POLICIES (2024 EDITION)
+Effective Date: January 1, 2024
+Policy ID: HR-2024-001
+
+1. GENERAL WORKING HOURS AND ATTENDANCE
+All standard full-time employees are expected to work 40 hours per week from 9:00 AM to 5:00 PM Monday through Friday.
+
+2. REMOTE WORK ALLOWANCE
+Employees are eligible for hybrid flexible working arrangements. Eligible employees may work remotely up to 2 days per week. Prior written approval from the departmental manager is mandatory before commencing remote work.
+
+3. ANNUAL LEAVE ENTITLEMENT
+Full-time personnel receive 20 days of paid annual vacation leave per calendar year. Unused leave may not be rolled over into the subsequent fiscal year.
+
+4. HEALTH AND REIMBURSEMENT
+The company provides comprehensive medical coverage and up to $500 annual wellness equipment reimbursement with receipt submission.`
+  },
+  {
+    filename: "HR_Policy_2026.txt",
+    title: "HR Policy 2026",
+    version: "2026.1",
+    effective_from: "2026-01-01",
+    content: `ACME GLOBAL ENTERPRISES
+EMPLOYEE HANDBOOK AND POLICIES (2026 EDITION)
+Effective Date: January 1, 2026
+Policy ID: HR-2026-017
+
+1. GENERAL WORKING HOURS AND ATTENDANCE
+All standard full-time employees are expected to work 40 hours per week with core collaboration hours between 10:00 AM and 4:00 PM.
+
+2. REMOTE WORK ALLOWANCE
+Under the modernized agile workplace initiative, eligible employees may work remotely up to 3 days per week. Departmental registration is recommended.
+
+3. ANNUAL LEAVE ENTITLEMENT
+Full-time personnel are granted 25 days of paid annual vacation leave per calendar year to promote work-life balance. Up to 5 days can be carried over.
+
+4. HEALTH AND REIMBURSEMENT
+The company provides comprehensive medical coverage, mental health counseling, and up to $1,000 annual wellness stipend.
+
+5. ARTIFICIAL INTELLIGENCE TOOLS USAGE
+Employees utilizing generative AI tools must adhere to the data privacy and IP security guidelines.`
+  }
+];
+
 function initQuickSample() {
   const btn = document.getElementById("btn-quick-sample");
   if (!btn) return;
 
   btn.addEventListener("click", async () => {
-    state.documents = [
-      { id: 1, filename: "HR_Policy_2024.txt", title: "HR Policy 2024", version: "2024.1", file_type: "txt", page_count: 1, chunk_count: 4, status: "ready" },
-      { id: 2, filename: "HR_Policy_2026.txt", title: "HR Policy 2026", version: "2026.1", file_type: "txt", page_count: 1, chunk_count: 5, status: "ready" }
-    ];
-    renderDocumentsGrid();
-    populateDocSelectors();
-    updateDocCount();
-    switchTab("documents", "Document Hub & Ingestion Status");
+    const origHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader-2" class="spin"></i><span>Ingesting Demo Policies...</span>`;
+    initLucide();
+
+    try {
+      let loaded = false;
+      try {
+        const resp = await fetch(`${API_BASE}/documents/load-demo`, { method: "POST" });
+        if (resp.ok) {
+          const loadedDocs = await resp.json();
+          loaded = true;
+          await fetchDocuments();
+          await fetchAnalytics();
+          populateDocSelectors();
+          switchTab("documents", "Document Hub & Ingestion Status");
+          showToast(`Successfully indexed ${loadedDocs.length} demo policies in Qdrant!`, "success");
+        }
+      } catch (err) {
+        // Fallback below
+      }
+
+      if (!loaded) {
+        await fetchDocuments();
+        let uploadedCount = 0;
+        for (const demo of DEMO_FILES) {
+          const existing = state.documents.find(d => d.filename === demo.filename && d.status === "ready");
+          if (existing) {
+            uploadedCount++;
+            continue;
+          }
+          const blob = new Blob([demo.content], { type: "text/plain" });
+          const formData = new FormData();
+          formData.append("file", blob, demo.filename);
+          formData.append("title", demo.title);
+          formData.append("version", demo.version);
+          formData.append("effective_from", demo.effective_from);
+
+          const upResp = await fetch(`${API_BASE}/documents/upload`, {
+            method: "POST",
+            body: formData
+          });
+          if (upResp.ok) uploadedCount++;
+        }
+        await fetchDocuments();
+        await fetchAnalytics();
+        populateDocSelectors();
+        switchTab("documents", "Document Hub & Ingestion Status");
+        showToast(`Successfully loaded & indexed demo policies (2024 & 2026) in Qdrant!`, "success");
+      }
+    } catch (e) {
+      console.error("Error loading demo policies:", e);
+      showToast("Network error while loading demo policies.", "error");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+      initLucide();
+    }
   });
+}
+
+// ----------------- Custom Confirmation Modal System -----------------
+function showConfirmModal({
+  title = "Confirm Action",
+  message = "Are you sure you want to proceed?",
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  confirmType = "danger",
+  icon = "alert-triangle"
+} = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("confirm-modal");
+    const titleEl = document.getElementById("confirm-modal-title");
+    const msgEl = document.getElementById("confirm-modal-message");
+    const iconContainer = document.getElementById("confirm-modal-icon");
+    const acceptBtn = document.getElementById("btn-accept-confirm");
+    const cancelBtn = document.getElementById("btn-cancel-confirm");
+    const closeBtn = document.getElementById("btn-close-confirm");
+
+    if (!modal || !acceptBtn || !cancelBtn) {
+      resolve(false);
+      return;
+    }
+
+    if (titleEl) titleEl.textContent = title;
+    if (msgEl) msgEl.textContent = message;
+    acceptBtn.innerHTML = `<span>${escapeHtml(confirmText)}</span>`;
+    cancelBtn.textContent = cancelText;
+
+    acceptBtn.className = "btn " + (confirmType === "danger" ? "btn-danger-gradient" : (confirmType === "warning" ? "btn-danger-gradient" : "btn-gradient"));
+
+    if (iconContainer) {
+      iconContainer.className = `modal-icon confirm-icon-${confirmType}`;
+      iconContainer.innerHTML = `<i data-lucide="${icon}"></i>`;
+      initLucide();
+    }
+
+    let settled = false;
+
+    const cleanup = (result) => {
+      if (settled) return;
+      settled = true;
+      modal.classList.remove("active");
+      acceptBtn.removeEventListener("click", onAccept);
+      cancelBtn.removeEventListener("click", onCancel);
+      if (closeBtn) closeBtn.removeEventListener("click", onCancel);
+      document.removeEventListener("keydown", onKeyDown);
+      modal.removeEventListener("click", onOverlayClick);
+      resolve(result);
+    };
+
+    const onAccept = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") cleanup(false);
+    };
+    const onOverlayClick = (e) => {
+      if (e.target === modal) cleanup(false);
+    };
+
+    acceptBtn.addEventListener("click", onAccept);
+    cancelBtn.addEventListener("click", onCancel);
+    if (closeBtn) closeBtn.addEventListener("click", onCancel);
+    document.addEventListener("keydown", onKeyDown);
+    modal.addEventListener("click", onOverlayClick);
+
+    modal.classList.add("active");
+    setTimeout(() => acceptBtn.focus(), 50);
+  });
+}
+
+// ----------------- Toast Notification System -----------------
+function showToast(message, type = "info", duration = 4000) {
+  const container = document.getElementById("toast-container");
+  if (!container) return;
+
+  const iconMap = {
+    success: "check-circle-2",
+    error: "alert-circle",
+    warning: "alert-triangle",
+    info: "info"
+  };
+
+  const toast = document.createElement("div");
+  toast.className = `toast-item toast-${type}`;
+  toast.innerHTML = `
+    <div class="toast-icon"><i data-lucide="${iconMap[type] || 'info'}"></i></div>
+    <div class="toast-body">${escapeHtml(message)}</div>
+    <button class="toast-close" type="button" aria-label="Close notification"><i data-lucide="x"></i></button>
+  `;
+
+  container.appendChild(toast);
+  initLucide();
+
+  requestAnimationFrame(() => {
+    toast.classList.add("show");
+  });
+
+  const removeToast = () => {
+    toast.classList.remove("show");
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  };
+
+  const closeBtn = toast.querySelector(".toast-close");
+  if (closeBtn) closeBtn.addEventListener("click", removeToast);
+
+  if (duration > 0) {
+    setTimeout(removeToast, duration);
+  }
 }
 
 function escapeHtml(str) {

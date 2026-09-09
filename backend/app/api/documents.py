@@ -59,6 +59,88 @@ async def upload_document(
 
     return doc
 
+@router.post("/load-demo", response_model=List[DocumentRead])
+def load_demo_documents(session: Session = Depends(get_session)):
+    """Seed and ingest the 2024 and 2026 demo HR policies into the database and Qdrant index."""
+    candidate_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "sample_data")),
+        os.path.abspath(os.path.join(os.getcwd(), "sample_data")),
+        os.path.abspath(os.path.join(os.getcwd(), "backend", "sample_data")),
+    ]
+    sample_dir = None
+    for p in candidate_paths:
+        if os.path.exists(p):
+            sample_dir = p
+            break
+
+    if not sample_dir:
+        raise HTTPException(status_code=404, detail="Demo sample data directory not found.")
+
+    demo_files = [
+        {
+            "filename": "HR_Policy_2024.txt",
+            "title": "HR Policy 2024",
+            "version": "2024.1",
+            "effective_from": datetime.date(2024, 1, 1),
+        },
+        {
+            "filename": "HR_Policy_2026.txt",
+            "title": "HR Policy 2026",
+            "version": "2026.1",
+            "effective_from": datetime.date(2026, 1, 1),
+        },
+    ]
+
+    loaded_docs = []
+    os.makedirs(settings.STORAGE_DIR, exist_ok=True)
+
+    for item in demo_files:
+        src_path = os.path.join(sample_dir, item["filename"])
+        if not os.path.exists(src_path):
+            continue
+
+        existing = session.exec(
+            select(Document).where(Document.filename == item["filename"])
+        ).first()
+
+        if existing and existing.status == "ready" and (existing.chunk_count or 0) > 0 and os.path.exists(existing.file_path):
+            loaded_docs.append(existing)
+            continue
+
+        if existing:
+            from sqlmodel import delete
+            try:
+                vector_db.delete_document_chunks(existing.id)
+            except Exception:
+                pass
+            session.exec(delete(Chunk).where(Chunk.document_id == existing.id))
+            session.exec(delete(DocumentPage).where(DocumentPage.document_id == existing.id))
+            session.delete(existing)
+            session.commit()
+
+        dest_filename = f"{int(datetime.datetime.utcnow().timestamp())}_{item['filename']}"
+        dest_path = os.path.join(settings.STORAGE_DIR, dest_filename)
+        shutil.copyfile(src_path, dest_path)
+
+        doc = Document(
+            filename=item["filename"],
+            file_type="txt",
+            file_path=dest_path,
+            title=item["title"],
+            version=item["version"],
+            effective_from=item["effective_from"],
+            status="pending",
+        )
+        session.add(doc)
+        session.commit()
+        session.refresh(doc)
+
+        ingestion_service.process_document(doc.id)
+        session.refresh(doc)
+        loaded_docs.append(doc)
+
+    return loaded_docs
+
 @router.get("", response_model=List[DocumentRead])
 def list_documents(session: Session = Depends(get_session)):
     """List all registered documents."""
