@@ -16,8 +16,8 @@ services:
     runtime: python
     plan: free # Change to 'starter' (1GB RAM) or higher if using MODEL_RUNTIME_MODE=pretrained
     region: oregon
-    buildCommand: "./render-build.sh"
-    startCommand: "./render-start.sh"
+    buildCommand: "bash ./render-build.sh"
+    startCommand: "bash ./render-start.sh"
     healthCheckPath: "/health/live"
     autoDeploy: true
     envVars:
