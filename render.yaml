@@ -1,0 +1,65 @@
+# Render Blueprint configuration for DocuSense
+# Docs: https://render.com/docs/blueprint-spec
+
+version: "1"
+
+databases:
+  - name: docusense-postgres
+    databaseName: docusense_db
+    user: docusense
+    plan: free # Change to 'starter' or higher for production persistence
+    region: oregon
+
+services:
+  - type: web
+    name: docusense-backend
+    runtime: python
+    plan: free # Change to 'starter' (1GB RAM) or higher if using MODEL_RUNTIME_MODE=pretrained
+    region: oregon
+    buildCommand: "./render-build.sh"
+    startCommand: "./render-start.sh"
+    healthCheckPath: "/health/live"
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: docusense-postgres
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MODEL_RUNTIME_MODE
+        value: deterministic # Set to 'pretrained' if your plan has >= 1GB RAM
+      - key: MODEL_PRELOAD
+        value: "true"
+      - key: MODEL_LOAD_TIMEOUT_SECONDS
+        value: "120"
+      - key: QDRANT_USE_LOCAL_STORAGE
+        value: "false"
+      - key: QDRANT_URL
+        sync: false # Set in Render Dashboard: e.g. https://your-cluster-id.eu-central-1-0.aws.cloud.qdrant.io:6333
+      - key: QDRANT_API_KEY
+        sync: false # Set in Render Dashboard from Qdrant Cloud console
+      - key: DEFAULT_LLM_PROVIDER
+        value: gemini
+      - key: LLM_MODEL_NAME
+        value: gemini-1.5-flash
+      - key: GEMINI_API_KEY
+        sync: false # Set your Gemini API key in Render Dashboard
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: CORS_ORIGINS
+        sync: false # Set to your deployed Render URL e.g. https://docusense-backend.onrender.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        sync: false # Set to https://<your-service-name>.onrender.com/auth/google/callback

@@ -61,6 +61,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_environment(self):
+        # Normalize database URL for PostgreSQL / psycopg3 on Render & cloud hosts
+        if self.DATABASE_URL.startswith("postgres://"):
+            self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+        elif self.DATABASE_URL.startswith("postgresql://") and not self.DATABASE_URL.startswith("postgresql+"):
+            self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
         if self.APP_ENV not in {"development", "production", "test"}:
             raise ValueError("APP_ENV must be development, test, or production")
 
@@ -72,8 +78,6 @@ class Settings(BaseSettings):
             if not self.QDRANT_URL:
                 raise ValueError("Production requires QDRANT_URL")
             self.DEBUG = False
-            if self.MODEL_RUNTIME_MODE == "deterministic":
-                self.MODEL_RUNTIME_MODE = "pretrained"
             if self.SESSION_SECRET == "dev-only-change-me":
                 raise ValueError("Production requires a unique SESSION_SECRET")
             self.AUTH_COOKIE_SECURE = True

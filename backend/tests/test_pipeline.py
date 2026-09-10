@@ -26,7 +26,8 @@ def test_full_docusense_pipeline():
         session.commit()
     
     # 2. Ingest 2024 Policy
-    path_2024 = os.path.abspath("sample_data/HR_Policy_2024.txt")
+    sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sample_data"))
+    path_2024 = os.path.join(sample_dir, "HR_Policy_2024.txt")
     with Session(engine) as session:
         doc_2024 = Document(
             filename="HR_Policy_2024.txt",
@@ -45,7 +46,7 @@ def test_full_docusense_pipeline():
     ingestion_service.process_document(doc_2024_id)
 
     # 3. Ingest 2026 Policy
-    path_2026 = os.path.abspath("sample_data/HR_Policy_2026.txt")
+    path_2026 = os.path.join(sample_dir, "HR_Policy_2026.txt")
     with Session(engine) as session:
         doc_2026 = Document(
             filename="HR_Policy_2026.txt",

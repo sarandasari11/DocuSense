@@ -60,19 +60,23 @@ The UI sign-in button starts the server-side OAuth flow. Google never exposes th
 
 Development uses `MODEL_RUNTIME_MODE=deterministic` by default, so the first query does not download model weights. Production switches to `pretrained`; embedding and reranker loading starts once during application startup and reports `loading` through `/health/ready` until complete.
 
-## Production
+## Production & Render Deployment
 
-Set `APP_ENV=production`, use a PostgreSQL `DATABASE_URL`, set `QDRANT_USE_LOCAL_STORAGE=false`, and configure `QDRANT_URL` and `QDRANT_API_KEY` when required.
+For a full step-by-step guide with 1-click Blueprint deployment on Render, see [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md).
 
-Run migrations before starting the application:
+Quick setup on Render:
+1. Connect your GitHub/GitLab repo to Render.
+2. Select **New +** > **Blueprint** and pick [`render.yaml`](render.yaml).
+3. Set your `QDRANT_URL`, `QDRANT_API_KEY`, and `GEMINI_API_KEY`.
+4. Render automatically provisions the PostgreSQL database, runs migrations (`render-start.sh`), and serves the backend and UI.
+
+To run migrations and start manually in production:
 
 ```powershell
 Set-Location backend
 python -m alembic upgrade head
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
-
-Production refuses SQLite and local file-backed Qdrant configuration.
 
 ## Health checks
 

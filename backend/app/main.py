@@ -108,7 +108,22 @@ app.include_router(analytics.router, prefix="/api/v1")
 app.include_router(auth.router)
 
 # Static frontend directory configuration
-frontend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend"))
+def _resolve_frontend_dir() -> str:
+    env_dir = os.environ.get("FRONTEND_DIR")
+    if env_dir and os.path.exists(env_dir):
+        return os.path.abspath(env_dir)
+    candidates = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend")),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend")),
+        os.path.abspath(os.path.join(os.getcwd(), "frontend")),
+        os.path.abspath(os.path.join(os.getcwd(), "..", "frontend")),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate) and os.path.isfile(os.path.join(candidate, "index.html")):
+            return candidate
+    return candidates[0]
+
+frontend_dir = _resolve_frontend_dir()
 
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
