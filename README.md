@@ -352,6 +352,10 @@ DIS/
 - Give Qdrant API keys only the permissions required by the deployment.
 - Do not expose Gemini, OAuth client secrets, database URLs, or Qdrant keys in frontend code.
 
-## License
+## 📄 License
 
-Add the project license here when one has been selected for DocuSense.
+This project is licensed under the **MIT License**.
+
+You are free to use, modify, and distribute this project, subject to the terms and conditions of the MIT License.
+
+See the [LICENSE](LICENSE) file for the full license text.
