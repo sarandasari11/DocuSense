@@ -169,8 +169,8 @@ docker compose down
 | `QDRANT_COLLECTION` | No | Defaults to `docusense_chunks` |
 | `MODEL_RUNTIME_MODE` | No | `deterministic` or `pretrained` |
 | `MODEL_PRELOAD` | No | Starts model warmup during application startup |
-| `DEFAULT_LLM_PROVIDER` | No | `gemini`, `openai`, or `mock` |
-| `LLM_MODEL_NAME` | No | Model name used by the selected provider |
+| `DEFAULT_LLM_PROVIDER` | Yes | `gemini`, `openai`, or `mock` |
+| `LLM_MODEL_NAME` | No | gemini-2.5-flash |
 | `GEMINI_API_KEY` | Required for Gemini | Google Gemini API key |
 | `OPENAI_API_KEY` | Required for OpenAI | OpenAI API key |
 | `GOOGLE_CLIENT_ID` | Optional | Google OAuth web client ID |
