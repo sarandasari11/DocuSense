@@ -24,6 +24,13 @@ def test_full_docusense_pipeline():
         session.exec(delete(Chunk))
         session.exec(delete(Document))
         session.commit()
+
+    from app.database.vector_db import vector_db
+    try:
+        vector_db.client.delete_collection(vector_db.collection_name)
+    except Exception:
+        pass
+    vector_db._ensure_collection()
     
     # 2. Ingest 2024 Policy
     sample_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "sample_data"))

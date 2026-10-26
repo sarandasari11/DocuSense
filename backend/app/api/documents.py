@@ -29,7 +29,7 @@ async def upload_document(
     ext = filename.split(".")[-1].lower() if "." in filename else "txt"
     
     os.makedirs(settings.STORAGE_DIR, exist_ok=True)
-    saved_path = os.path.join(settings.STORAGE_DIR, f"{int(datetime.datetime.utcnow().timestamp())}_{filename}")
+    saved_path = os.path.join(settings.STORAGE_DIR, f"{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}_{filename}")
     
     with open(saved_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
@@ -145,7 +145,7 @@ def load_demo_documents(session: Session = Depends(get_session)):
             session.delete(existing)
             session.commit()
 
-        dest_filename = f"{int(datetime.datetime.utcnow().timestamp())}_{item['filename']}"
+        dest_filename = f"{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}_{item['filename']}"
         dest_path = os.path.join(settings.STORAGE_DIR, dest_filename)
         if src_path and os.path.exists(src_path):
             shutil.copyfile(src_path, dest_path)

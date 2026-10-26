@@ -3,6 +3,9 @@ from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Relationship
 from pydantic import BaseModel, ConfigDict
 
+def utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc)
+
 # ----------------- Database ORM Models -----------------
 
 class Document(SQLModel, table=True):
@@ -20,7 +23,7 @@ class Document(SQLModel, table=True):
     chunk_count: int = 0
     status: str = "pending"  # pending, processing, ready, failed
     error_message: Optional[str] = None
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    created_at: datetime.datetime = Field(default_factory=utc_now)
     
     pages: List["DocumentPage"] = Relationship(back_populates="document", cascade_delete=True)
     chunks: List["Chunk"] = Relationship(back_populates="document", cascade_delete=True)
@@ -59,7 +62,7 @@ class Conversation(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str = "New Conversation"
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    created_at: datetime.datetime = Field(default_factory=utc_now)
     
     messages: List["Message"] = Relationship(back_populates="conversation", cascade_delete=True)
 
@@ -72,7 +75,7 @@ class Message(SQLModel, table=True):
     role: str  # "user" | "assistant" | "system"
     content: str
     confidence_score: Optional[float] = None
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    created_at: datetime.datetime = Field(default_factory=utc_now)
     
     conversation: Optional[Conversation] = Relationship(back_populates="messages")
     citations: List["Citation"] = Relationship(back_populates="message", cascade_delete=True)
@@ -106,7 +109,7 @@ class Contradiction(SQLModel, table=True):
     source_b_page: int
     confidence: float
     status: str = "detected"  # detected, verified, resolved
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    created_at: datetime.datetime = Field(default_factory=utc_now)
 
 
 # ----------------- API Pydantic Schemas -----------------
