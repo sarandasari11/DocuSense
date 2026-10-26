@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -66,6 +67,22 @@ class Settings(BaseSettings):
             self.DATABASE_URL = self.DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
         elif self.DATABASE_URL.startswith("postgresql://") and not self.DATABASE_URL.startswith("postgresql+"):
             self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+
+        if self.QDRANT_URL:
+            self.QDRANT_URL = self.QDRANT_URL.strip().rstrip("/")
+            if not self.QDRANT_URL.startswith(("http://", "https://")):
+                self.QDRANT_URL = f"https://{self.QDRANT_URL}"
+
+        # Detect Render deployment environment to automatically configure URLs
+        render_url = os.environ.get("RENDER_EXTERNAL_URL")
+        if render_url:
+            clean_render_url = render_url.strip().rstrip("/")
+            origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+            if clean_render_url not in origins:
+                origins.append(clean_render_url)
+                self.CORS_ORIGINS = ",".join(origins)
+            if not self.GOOGLE_OAUTH_REDIRECT_URI or "localhost" in self.GOOGLE_OAUTH_REDIRECT_URI or "127.0.0.1" in self.GOOGLE_OAUTH_REDIRECT_URI:
+                self.GOOGLE_OAUTH_REDIRECT_URI = f"{clean_render_url}/auth/google/callback"
 
         if self.APP_ENV not in {"development", "production", "test"}:
             raise ValueError("APP_ENV must be development, test, or production")

@@ -49,17 +49,13 @@ services:
         value: gemini-1.5-flash
       - key: GEMINI_API_KEY
         sync: false # Set your Gemini API key in Render Dashboard
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
       - key: AUTH_COOKIE_SECURE
         value: "true"
       - key: CORS_ORIGINS
-        sync: false # Set to your deployed Render URL e.g. https://docusense-backend.onrender.com
+        value: "" # Automatically configured from RENDER_EXTERNAL_URL
       - key: GOOGLE_CLIENT_ID
-        sync: false
+        sync: false # Set to Google OAuth Client ID (or leave blank if disabled)
       - key: GOOGLE_CLIENT_SECRET
-        sync: false
+        sync: false # Set to Google OAuth Client Secret (or leave blank if disabled)
       - key: GOOGLE_OAUTH_REDIRECT_URI
-        sync: false # Set to https://<your-service-name>.onrender.com/auth/google/callback
+        value: "" # Automatically defaults to https://<your-service>.onrender.com/auth/google/callback

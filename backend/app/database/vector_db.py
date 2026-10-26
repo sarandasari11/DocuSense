@@ -12,6 +12,13 @@ class VectorDBManager:
         self.collection_name = settings.QDRANT_COLLECTION
         self._init_client()
 
+    def _get_client(self):
+        if self.client is None:
+            self._init_client()
+        if self.client is None:
+            raise RuntimeError("Qdrant client is not connected. Please verify QDRANT_URL and QDRANT_API_KEY.")
+        return self.client
+
     def _init_client(self):
         try:
             if settings.QDRANT_URL:
@@ -26,26 +33,30 @@ class VectorDBManager:
             
             self._ensure_collection()
         except Exception as e:
-            if settings.APP_ENV == "production":
-                raise RuntimeError(f"Failed to initialize production Qdrant: {e}") from e
-            logger.error(f"Failed to initialize Qdrant client: {e}. Falling back to in-memory Qdrant.")
-            self.client = QdrantClient(":memory:")
-            self._ensure_collection()
+            logger.error(f"Failed to initialize Qdrant client: {e}")
+            if settings.APP_ENV != "production":
+                logger.info("Falling back to in-memory Qdrant for development.")
+                self.client = QdrantClient(":memory:")
+                self._ensure_collection()
+            else:
+                self.client = None
 
     def health_check(self) -> dict:
         try:
-            self.client.get_collections()
+            client = self._get_client()
+            client.get_collections()
             return {"status": "ok", "collection": self.collection_name}
         except Exception as exc:
             return {"status": "error", "detail": str(exc)}
 
     def _ensure_collection(self):
         try:
-            collections = self.client.get_collections().collections
+            client = self._get_client()
+            collections = client.get_collections().collections
             exists = any(c.name == self.collection_name for c in collections)
             if not exists:
                 logger.info(f"Creating Qdrant collection: {self.collection_name} (dim={settings.EMBEDDING_DIM})")
-                self.client.create_collection(
+                client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=models.VectorParams(
                         size=settings.EMBEDDING_DIM,
@@ -53,12 +64,12 @@ class VectorDBManager:
                     )
                 )
                 # Create payload index for fast filtering
-                self.client.create_payload_index(
+                client.create_payload_index(
                     collection_name=self.collection_name,
                     field_name="document_id",
                     field_schema=models.PayloadSchemaType.INTEGER
                 )
-                self.client.create_payload_index(
+                client.create_payload_index(
                     collection_name=self.collection_name,
                     field_name="year",
                     field_schema=models.PayloadSchemaType.INTEGER
@@ -70,7 +81,8 @@ class VectorDBManager:
         """Upsert a batch of chunk vectors with metadata payloads."""
         if not points:
             return
-        self.client.upsert(
+        client = self._get_client()
+        client.upsert(
             collection_name=self.collection_name,
             points=points
         )
@@ -102,17 +114,18 @@ class VectorDBManager:
             )
 
         query_filter = models.Filter(must=must_filters) if must_filters else None
+        client = self._get_client()
 
-        if hasattr(self.client, "query_points"):
-            response = self.client.query_points(
+        if hasattr(client, "query_points"):
+            response = client.query_points(
                 collection_name=self.collection_name,
                 query=query_vector,
                 query_filter=query_filter,
                 limit=limit
             )
             return response.points
-        elif hasattr(self.client, "search"):
-            return self.client.search(
+        elif hasattr(client, "search"):
+            return client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 query_filter=query_filter,
@@ -122,7 +135,8 @@ class VectorDBManager:
 
     def delete_document_chunks(self, document_id: int):
         """Delete all chunk vectors for a given document."""
-        self.client.delete(
+        client = self._get_client()
+        client.delete(
             collection_name=self.collection_name,
             points_selector=models.FilterSelector(
                 filter=models.Filter(

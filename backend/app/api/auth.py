@@ -58,7 +58,7 @@ async def google_callback(request: Request):
             return JSONResponse(
                 status_code=401,
                 content={
-                    "detail": "OAuth login expired or the callback used a different host. Start a new login from http://localhost:8000 and do not use an older Google callback tab."
+                    "detail": "OAuth login expired or the callback session was invalid. Please return to the DocuSense homepage and click 'Sign in with Google' again."
                 },
             )
         return JSONResponse(status_code=401, content={"detail": "Google authentication failed."})
