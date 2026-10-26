@@ -22,10 +22,30 @@ class TemporalQueryAnalyzer:
         return query, target_year
 
     @staticmethod
+    def is_conversational_or_greeting(query: str) -> bool:
+        """Check if query is casual chit-chat, greeting, or generalized assistant query."""
+        lowered = query.strip().lower()
+        cleaned = re.sub(r"[^\w\s]", "", lowered).strip()
+        common = {
+            "hi", "hello", "hey", "hola", "greetings", "good morning", "good afternoon",
+            "good evening", "how are you", "how are you doing", "what is your name",
+            "who are you", "what can you do", "help", "thanks", "thank you", "bye", "goodbye"
+        }
+        if cleaned in common:
+            return True
+        if any(cleaned.startswith(g + " ") for g in ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"]):
+            return True
+        return False
+
+    @staticmethod
     def rewrite_query(query: str) -> str:
         """Expand underspecified questions before retrieval without inventing facts."""
         normalized = re.sub(r"\s+", " ", query).strip()
         lowered = normalized.lower()
+
+        # Do not expand conversational greetings or small talk
+        if TemporalQueryAnalyzer.is_conversational_or_greeting(lowered):
+            return normalized
 
         replacements = {
             "what about it": "what does the document policy say about this topic",
@@ -39,8 +59,17 @@ class TemporalQueryAnalyzer:
                 normalized = re.sub(re.escape(source), replacement, normalized, flags=re.IGNORECASE)
                 lowered = normalized.lower()
 
-        if len(normalized.split()) <= 3:
-            normalized = f"{normalized} policy requirements, eligibility, limits, and effective version"
+        # Only append policy terms if query seems policy-related or under 4 words without being general chit-chat
+        words = normalized.split()
+        if len(words) <= 3:
+            policy_keywords = {
+                "leave", "remote", "work", "wfh", "hours", "policy", "benefit", "bonus",
+                "salary", "expense", "vacation", "sick", "notice", "insurance", "pension",
+                "allowance", "guideline", "rule", "contract", "compliance"
+            }
+            if any(k in lowered for k in policy_keywords):
+                normalized = f"{normalized} policy requirements, eligibility, limits, and effective version"
         return normalized
 
 temporal_analyzer = TemporalQueryAnalyzer()
+

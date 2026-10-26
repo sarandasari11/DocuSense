@@ -4,10 +4,13 @@ const API_BASE = "/api/v1";
 let state = {
   currentTab: "chat",
   documents: [],
+  conversations: [],
   conversationId: null,
   latestCitations: [],
   selectedDocumentId: null,
-  evidenceOpen: true
+  selectedDocumentPage: null,
+  evidenceOpen: true,
+  comparison: null
 };
 
 // Initialize UI on Load
@@ -24,7 +27,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initDocumentFilters();
   initEvidencePanel();
   initDocumentDetail();
+  initExportActions();
   fetchDocuments();
+  fetchConversations();
   fetchAnalytics();
   fetchSystemHealth();
   initAuth();
@@ -91,28 +96,93 @@ function initLucide() {
 }
 
 function initWorkspaceRail() {
-  document.querySelectorAll(".conversation-item").forEach(item => {
-    item.addEventListener("click", () => {
-      document.querySelectorAll(".conversation-item").forEach(entry => entry.classList.remove("active"));
-      item.classList.add("active");
-      const session = item.dataset.session;
-      const crumb = document.getElementById("crumb-current-page");
-      if (crumb) crumb.textContent = session;
-    });
-  });
-
   const newConversation = document.getElementById("btn-new-conversation");
   if (newConversation) {
     newConversation.addEventListener("click", () => {
       state.conversationId = null;
       document.getElementById("chat-messages").innerHTML = `<div class="chat-hero compact-hero"><div class="hero-icon-container"><i data-lucide="message-square-plus"></i></div><h2>New grounded session</h2><p>Ask a question and inspect the exact source passages behind the answer.</p></div>`;
       document.getElementById("evidence-list").innerHTML = `<div class="evidence-empty"><i data-lucide="quote"></i><span>Ask a question to inspect cited passages.</span></div>`;
+      document.querySelectorAll(".conversation-item").forEach(entry => entry.classList.remove("active"));
+      const crumb = document.getElementById("crumb-current-page");
+      if (crumb) crumb.textContent = "Grounded Reasoning & Chat";
       initLucide();
     });
   }
 
   const search = document.getElementById("source-search-input");
   if (search) search.addEventListener("input", () => renderSourceRail(search.value));
+}
+
+async function fetchConversations() {
+  try {
+    const response = await fetch(`${API_BASE}/chat/conversations`);
+    if (!response.ok) return;
+    state.conversations = await response.json();
+    renderConversationRail();
+  } catch (error) {
+    renderConversationRail();
+  }
+}
+
+function renderConversationRail() {
+  const list = document.getElementById("conversation-list");
+  if (!list) return;
+  list.innerHTML = state.conversations.length ? state.conversations.map(conversation => `
+    <div class="conversation-row ${String(state.conversationId) === String(conversation.id) ? "active" : ""}" data-conversation-id="${conversation.id}">
+      <button class="conversation-item" type="button" title="Open ${escapeHtml(conversation.title)}"><span class="conversation-dot"></span><span><strong>${escapeHtml(conversation.title)}</strong><small>${formatConversationDate(conversation.created_at)}</small></span></button>
+      <button class="conversation-more" type="button" title="Conversation actions" aria-label="Conversation actions"><i data-lucide="more-horizontal"></i></button>
+      <div class="conversation-actions"><button class="rename-conversation" type="button"><i data-lucide="pencil"></i> Rename</button><button class="delete-conversation" type="button"><i data-lucide="trash-2"></i> Delete</button></div>
+    </div>`).join("") : `<div class="rail-empty">Ask a question to save a session</div>`;
+
+  list.querySelectorAll(".conversation-item").forEach(button => button.addEventListener("click", () => loadConversation(button.closest(".conversation-row").dataset.conversationId)));
+  list.querySelectorAll(".conversation-more").forEach(button => button.addEventListener("click", event => {
+    event.stopPropagation();
+    button.closest(".conversation-row").classList.toggle("menu-open");
+  }));
+  list.querySelectorAll(".rename-conversation").forEach(button => button.addEventListener("click", () => renameConversation(button.closest(".conversation-row").dataset.conversationId)));
+  list.querySelectorAll(".delete-conversation").forEach(button => button.addEventListener("click", () => deleteConversation(button.closest(".conversation-row").dataset.conversationId)));
+  initLucide();
+}
+
+function formatConversationDate(value) {
+  if (!value) return "saved session";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "saved session" : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+async function loadConversation(conversationId) {
+  const response = await fetch(`${API_BASE}/chat/conversations/${conversationId}`);
+  if (!response.ok) return;
+  const conversation = await response.json();
+  state.conversationId = conversation.id;
+  const container = document.getElementById("chat-messages");
+  container.innerHTML = "";
+  conversation.messages.forEach(message => {
+    if (message.role === "user") appendUserMessage(message.content);
+    if (message.role === "assistant") appendAssistantMessage({ answer: message.content, confidence_score: message.confidence_score || 0, citations: message.citations || [], latency_ms: {}, retrieved_chunks_count: 0 });
+  });
+  renderConversationRail();
+  const crumb = document.getElementById("crumb-current-page");
+  if (crumb) crumb.textContent = conversation.title;
+}
+
+async function renameConversation(conversationId) {
+  const conversation = state.conversations.find(item => String(item.id) === String(conversationId));
+  const title = window.prompt("Rename conversation", conversation?.title || "Conversation");
+  if (!title || !title.trim()) return;
+  const response = await fetch(`${API_BASE}/chat/conversations/${conversationId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: title.trim() }) });
+  if (response.ok) { await fetchConversations(); showToast("Conversation renamed.", "success"); }
+}
+
+async function deleteConversation(conversationId) {
+  const confirmed = await showConfirmModal({ title: "Delete conversation", message: "This removes the saved chat and its citations.", confirmText: "Delete", confirmType: "danger", icon: "trash-2" });
+  if (!confirmed) return;
+  const response = await fetch(`${API_BASE}/chat/conversations/${conversationId}`, { method: "DELETE" });
+  if (response.ok) {
+    if (String(state.conversationId) === String(conversationId)) document.getElementById("btn-new-conversation")?.click();
+    await fetchConversations();
+    showToast("Conversation deleted.", "success");
+  }
 }
 
 function renderSourceRail(query = "") {
@@ -163,20 +233,51 @@ async function fetchSystemHealth() {
 }
 
 function initDocumentFilters() {
-  ["document-year-filter", "document-type-filter", "document-department-filter", "document-search-filter"].forEach(id => {
+  ["document-year-filter", "document-type-filter", "document-department-filter"].forEach(id => {
     const element = document.getElementById(id);
     if (element) element.addEventListener("input", renderDocumentsGrid);
     if (element) element.addEventListener("change", renderDocumentsGrid);
   });
+
+  const resetBtn = document.getElementById("btn-reset-doc-filters");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      const year = document.getElementById("document-year-filter");
+      const type = document.getElementById("document-type-filter");
+      const dept = document.getElementById("document-department-filter");
+      if (year) year.value = "";
+      if (type) type.value = "";
+      if (dept) dept.value = "";
+      renderDocumentsGrid();
+    });
+  }
+}
+
+function setEvidenceOpen(isOpen) {
+  state.evidenceOpen = isOpen;
+  const rail = document.querySelector(".evidence-rail");
+  const layout = document.querySelector(".chat-layout");
+  const reopenBtn = document.getElementById("btn-reopen-evidence");
+  const reopenBadge = document.getElementById("evidence-reopen-badge");
+
+  if (reopenBadge) {
+    const count = (state.latestCitations || []).length;
+    reopenBadge.textContent = count;
+    reopenBadge.style.display = count > 0 ? "inline-flex" : "none";
+  }
+
+  if (rail) rail.classList.toggle("is-hidden", !isOpen);
+  if (layout) layout.classList.toggle("evidence-hidden", !isOpen);
+  if (reopenBtn) reopenBtn.classList.toggle("visible", !isOpen);
 }
 
 function initEvidencePanel() {
   const close = document.getElementById("btn-close-evidence");
-  if (close) close.addEventListener("click", () => {
-    state.evidenceOpen = false;
-    document.querySelector(".evidence-rail").classList.add("is-hidden");
-    document.querySelector(".chat-layout").classList.add("evidence-hidden");
-  });
+  if (close) close.addEventListener("click", () => setEvidenceOpen(false));
+
+  const reopenBtn = document.getElementById("btn-reopen-evidence");
+  if (reopenBtn) reopenBtn.addEventListener("click", () => setEvidenceOpen(true));
+
   const open = document.getElementById("btn-open-full-document");
   if (open) open.addEventListener("click", () => {
     const citation = state.latestCitations[0];
@@ -190,12 +291,18 @@ function renderEvidence(citations = []) {
   state.latestCitations = citations;
   const list = document.getElementById("evidence-list");
   const count = document.getElementById("evidence-count");
-  const rail = document.querySelector(".evidence-rail");
   if (!list) return;
-  if (rail && !state.evidenceOpen) {
-    rail.classList.remove("is-hidden");
-    document.querySelector(".chat-layout").classList.remove("evidence-hidden");
-    state.evidenceOpen = true;
+
+  const reopenBadge = document.getElementById("evidence-reopen-badge");
+  if (reopenBadge) {
+    reopenBadge.textContent = citations.length;
+    reopenBadge.style.display = citations.length > 0 ? "inline-flex" : "none";
+  }
+
+  if (state.evidenceOpen) {
+    setEvidenceOpen(true);
+  } else {
+    setEvidenceOpen(false);
   }
   const minimumConfidence = Number(document.getElementById("evidence-confidence-filter")?.value || 0);
   const visibleCitations = citations.map((citation, index) => ({ citation, index })).filter(item => (item.citation.confidence || item.citation.relevance_score || 0) >= minimumConfidence);
@@ -204,7 +311,7 @@ function renderEvidence(citations = []) {
     <button class="evidence-card" data-evidence-index="${index}" title="Open source passage">
       <span class="evidence-card-top"><span class="evidence-number">${index + 1}</span><span class="evidence-doc">${escapeHtml(citation.document_name || "Source")}</span><span class="evidence-page">p.${citation.page_number} · ${Math.round((citation.confidence || citation.relevance_score || 0) * 100)}%</span></span>
       <span class="evidence-excerpt">${escapeHtml(citation.excerpt)}</span><span class="evidence-meter"><span style="width:${Math.min(100, Math.max(8, (citation.confidence || citation.relevance_score || 0) * 100))}%"></span></span>
-    </button>`).join("") : `<div class="evidence-empty"><i data-lucide="quote"></i><span>No passages meet this confidence threshold.</span></div>`;
+    </button>`).join("") : `<div class="evidence-empty"><i data-lucide="${citations.length === 0 ? 'sparkles' : 'quote'}"></i><span>${citations.length === 0 ? 'General reasoning query — no document passages required.' : 'No passages meet this confidence threshold.'}</span></div>`;
   list.querySelectorAll(".evidence-card").forEach(card => card.addEventListener("click", () => {
     const citation = state.latestCitations[Number(card.dataset.evidenceIndex)];
     if (citation) openDocumentDetail(citation.document_id, citation.page_number, citation.section_heading);
@@ -226,24 +333,101 @@ async function openDocumentDetail(documentId, pageNumber, sectionHeading) {
   const doc = state.documents.find(item => String(item.id) === String(documentId));
   if (!overlay || !body || !doc) return;
   state.selectedDocumentId = documentId;
+  state.selectedDocumentPage = pageNumber || 1;
   overlay.classList.add("active");
   overlay.setAttribute("aria-hidden", "false");
   document.getElementById("detail-title").textContent = doc.title || doc.filename;
   document.getElementById("detail-meta").textContent = `${doc.version || "1.0"} · ${doc.file_type.toUpperCase()} · ${doc.page_count} pages · ${doc.chunk_count} sections`;
-  body.innerHTML = `<div class="evidence-empty"><i data-lucide="loader-2" class="spin"></i> Loading extracted sections...</div>`;
+  body.innerHTML = `<div class="reader-loading"><i data-lucide="loader-2" class="spin"></i><span>Loading source reader...</span></div>`;
   initLucide();
   try {
     const response = await fetch(`${API_BASE}/documents/${documentId}/content`);
     const data = await response.json();
-    body.innerHTML = data.sections.map(section => `<section class="detail-section ${String(section.page_number) === String(pageNumber) && section.section_heading === sectionHeading ? "is-highlighted" : ""}"><div class="detail-section-top"><span>PAGE ${section.page_number}</span><strong>${escapeHtml(section.section_heading || "General")}</strong></div><p>${escapeHtml(section.text)}</p></section>`).join("") || `<div class="evidence-empty">No extracted sections available.</div>`;
+    const targetPage = pageNumber || data.sections[0]?.page_number || 1;
+    const sectionsHtml = data.sections.map(section => `<section class="detail-section ${String(section.page_number) === String(targetPage) && (!sectionHeading || section.section_heading === sectionHeading) ? "is-highlighted" : ""}" data-page-number="${section.page_number}"><div class="detail-section-top"><span>PAGE ${section.page_number}</span><strong>${escapeHtml(section.section_heading || "General")}</strong></div><p>${escapeHtml(section.text)}</p></section>`).join("");
+    if (doc.file_type === "pdf") {
+      body.innerHTML = `<div class="pdf-reader-shell"><div class="pdf-stage"><canvas id="pdf-canvas" aria-label="Rendered source PDF"></canvas></div><div class="reader-caption"><i data-lucide="mouse-pointer-2"></i> Page ${targetPage} cited. The extracted section below is the searchable evidence anchor.</div></div><div class="extracted-heading"><span>SEARCHABLE EXTRACT</span><span>${data.sections.length} sections</span></div>${sectionsHtml || `<div class="evidence-empty">No extracted sections available.</div>`}`;
+      await renderPdfPage(documentId, targetPage);
+    } else {
+      body.innerHTML = `<div class="reader-caption"><i data-lucide="file-text"></i> ${doc.file_type.toUpperCase()} source opened in extracted reader mode.</div>${sectionsHtml || `<div class="evidence-empty">No extracted sections available.</div>`}`;
+    }
+    const highlighted = body.querySelector(".detail-section.is-highlighted");
+    if (highlighted) highlighted.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById("reader-page-label").textContent = `Page ${targetPage}`;
+    document.getElementById("reader-mode-label").innerHTML = `<i data-lucide="${doc.file_type === "pdf" ? "file-scan" : "scan-text"}"></i> ${doc.file_type === "pdf" ? "PDF.js source view" : "Extracted source view"}`;
+    initLucide();
   } catch (error) {
     body.innerHTML = `<div class="evidence-empty">Unable to load extracted source content.</div>`;
+  }
+}
+
+async function renderPdfPage(documentId, pageNumber) {
+  const canvas = document.getElementById("pdf-canvas");
+  if (!canvas) return;
+  try {
+    const pdfjs = await import("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs";
+    const pdf = await pdfjs.getDocument(`${API_BASE}/documents/${documentId}/file`).promise;
+    const page = await pdf.getPage(Number(pageNumber) || 1);
+    const viewport = page.getViewport({ scale: 1.35 });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  } catch (error) {
+    const stage = canvas.closest(".pdf-stage");
+    if (stage) stage.innerHTML = `<div class="reader-fallback"><i data-lucide="file-warning"></i><strong>PDF preview unavailable</strong><span>Use Original to download the source, or inspect the extracted evidence below.</span></div>`;
+    initLucide();
   }
 }
 
 function closeDocumentDetail() {
   const overlay = document.getElementById("document-detail-overlay");
   if (overlay) { overlay.classList.remove("active"); overlay.setAttribute("aria-hidden", "true"); }
+}
+
+function initExportActions() {
+  document.getElementById("btn-export-chat")?.addEventListener("click", () => downloadText("docusense-chat.md", buildChatMarkdown()));
+  document.getElementById("btn-print-chat")?.addEventListener("click", () => printSection("chat-messages", "DocuSense Chat Transcript"));
+  document.getElementById("btn-export-compare")?.addEventListener("click", () => downloadText("docusense-comparison.md", buildComparisonMarkdown()));
+  document.getElementById("btn-print-compare")?.addEventListener("click", () => printSection("compare-results", "DocuSense Comparison Report"));
+  document.getElementById("btn-detail-download")?.addEventListener("click", () => {
+    if (state.selectedDocumentId) window.open(`${API_BASE}/documents/${state.selectedDocumentId}/file`, "_blank");
+  });
+}
+
+function downloadText(filename, content) {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function buildChatMarkdown() {
+  const lines = ["# DocuSense Chat Transcript", "", `Exported: ${new Date().toLocaleString()}`, ""];
+  document.querySelectorAll("#chat-messages .msg-entry").forEach(message => {
+    const role = message.classList.contains("user") ? "User" : "DocuSense";
+    const content = message.querySelector(".msg-bubble-user, .msg-body-content")?.textContent?.trim();
+    if (content) lines.push(`## ${role}`, "", content, "");
+  });
+  return lines.join("\n");
+}
+
+function buildComparisonMarkdown() {
+  if (!state.comparison) return "# DocuSense Comparison Report\n\nRun a comparison first.";
+  const lines = [`# ${state.comparison.doc_a_title} vs ${state.comparison.doc_b_title}`, ""];
+  state.comparison.comparison_matrix.forEach(clause => lines.push(`## ${clause.topic}`, "", `**Status:** ${clause.change_type}`, "", `**Baseline:** ${clause.doc_a_text || "Not present"}`, "", `**Comparison:** ${clause.doc_b_text || "Not present"}`, "", `**Summary:** ${clause.summary_of_change}`, ""));
+  return lines.join("\n");
+}
+
+function printSection(id, title) {
+  if (!document.getElementById(id)) return;
+  const oldTitle = document.title;
+  document.title = title;
+  document.body.classList.add("print-mode");
+  window.print();
+  document.body.classList.remove("print-mode");
+  document.title = oldTitle;
 }
 
 // ----------------- Tab Navigation -----------------
@@ -332,6 +516,7 @@ function initChat() {
 
       removeLoadingPlaceholder(loadingId);
       appendAssistantMessage(data);
+      fetchConversations();
     } catch (err) {
       removeLoadingPlaceholder(loadingId);
       appendFallbackResponse(query, yearFilter);
@@ -370,6 +555,80 @@ function removeLoadingPlaceholder(id) {
   if (el) el.remove();
 }
 
+function renderMarkdown(text) {
+  if (!text) return "";
+
+  // Strip accidental mode prefixes if present
+  let cleanText = String(text)
+    .replace(/^\[?MODE\s*:\s*(GENERAL|DOCUMENT)\]?:?\s*/i, "")
+    .trim();
+
+  // If marked library is available from CDN, use it with GFM
+  if (typeof marked !== "undefined" && typeof marked.parse === "function") {
+    try {
+      marked.use({
+        gfm: true,
+        breaks: true
+      });
+      return marked.parse(cleanText);
+    } catch (err) {
+      console.warn("marked.parse encountered an issue, falling back to built-in renderer:", err);
+    }
+  }
+
+  // Built-in resilient markdown parser fallback
+  let html = cleanText
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Code blocks: ```lang ... ```
+  html = html.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+    return `<pre><code class="language-${lang || 'plaintext'}">${code.trim()}</code></pre>`;
+  });
+
+  // Inline code: `code`
+  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+  // Headers: ###, ##, #
+  html = html.replace(/^### (.*$)/gim, '<h4>$1</h4>');
+  html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
+  html = html.replace(/^# (.*$)/gim, '<h2>$1</h2>');
+
+  // Bold & Italic: ***text***
+  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+
+  // Bold: **text**
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Italic: *text*
+  html = html.replace(/(^|[^\*])\*([^\*\n]+)\*([^\*]|$)/g, '$1<em>$2</em>$3');
+
+  // Blockquotes: > quote
+  html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+  // Unordered list items: * item or - item
+  html = html.replace(/^[\*\-]\s+(.*$)/gim, '<li>$1</li>');
+  html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+  html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+  // Ordered list items: 1. item
+  html = html.replace(/^\d+\.\s+(.*$)/gim, '<li class="oli">$1</li>');
+  html = html.replace(/(<li class="oli">[\s\S]*?<\/li>)/g, '<ol>$1</ol>');
+  html = html.replace(/<\/ol>\s*<ol>/g, '');
+
+  // Split into paragraphs by double newlines
+  const blocks = html.split(/\n{2,}/);
+  return blocks.map(block => {
+    const trimmed = block.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("<h") || trimmed.startsWith("<ul") || trimmed.startsWith("<ol") || trimmed.startsWith("<pre") || trimmed.startsWith("<blockquote")) {
+      return trimmed;
+    }
+    return `<p>${trimmed.replace(/\n/g, "<br/>")}</p>`;
+  }).join("\n");
+}
+
 function appendAssistantMessage(data) {
   const container = document.getElementById("chat-messages");
   const row = document.createElement("div");
@@ -378,6 +637,21 @@ function appendAssistantMessage(data) {
   const confPct = Math.round(data.confidence_score * 100);
   const isHighConf = confPct >= 85;
   const totalMs = data.latency_ms?.total_ms || 45;
+  const isGeneralBrain = (data.retrieval_explanation || "").toLowerCase().includes("general reasoning brain");
+
+  const badgeHtml = isGeneralBrain
+    ? `<div class="confidence-indicator" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);">
+         <i data-lucide="sparkles"></i>
+         <span>Gemini General Brain</span>
+       </div>`
+    : `<div class="confidence-indicator ${isHighConf ? '' : 'medium'}">
+         <i data-lucide="${isHighConf ? 'check-circle-2' : 'alert-circle'}"></i>
+         <span>${confPct}% Verified Support</span>
+       </div>`;
+
+  const latencyHtml = isGeneralBrain
+    ? `<div class="latency-metrics-tag"><i data-lucide="zap"></i> ${totalMs} ms (Direct LLM reasoning)</div>`
+    : `<div class="latency-metrics-tag"><i data-lucide="zap"></i> ${totalMs} ms (${data.retrieved_chunks_count} chunks reranked)</div>`;
 
   const resolveCitationDocumentId = citation => citation.document_id || state.documents.find(doc => (doc.title || doc.filename) === citation.document_name)?.id || "";
   let citationsHtml = "";
@@ -385,20 +659,25 @@ function appendAssistantMessage(data) {
     citationsHtml = `
       <div class="citation-container">
         <div class="citation-header-title">
-          <i data-lucide="shield-check" style="color: var(--accent-emerald);"></i> Verified Evidence & Ground Truth Citations (${data.citations.length})
+          <div class="citation-title-left">
+            <i data-lucide="shield-check" style="color: var(--accent-emerald);"></i>
+            <span>Verified Ground Truth Sources (${data.citations.length})</span>
+          </div>
+          <span class="citation-hint-badge">Click card to inspect cited page</span>
         </div>
         <div class="citation-cards-grid">
-          ${data.citations.map(c => `
-              <button class="citation-card" data-document-id="${resolveCitationDocumentId(c)}" data-page-number="${c.page_number}" data-section-heading="${escapeHtml(c.section_heading || "")}" title="Click to view cited section in document">
-              <div class="citation-top-row">
+          ${data.citations.map((c, i) => `
+            <button class="citation-card" data-document-id="${resolveCitationDocumentId(c)}" data-page-number="${c.page_number}" data-section-heading="${escapeHtml(c.section_heading || "")}" title="Click to view cited section in document" type="button">
+              <div class="citation-card-header">
+                <span class="citation-index-chip">${i + 1}</span>
                 <span class="citation-doc-name"><i data-lucide="file-text"></i> ${escapeHtml(c.document_name)}</span>
-                <span class="citation-page-badge">Page ${c.page_number}</span>
-              </button>
-              <div style="font-size: 0.76rem; color: var(--accent-indigo); margin-bottom: 4px; font-weight: 600;">
+                <span class="citation-page-badge">p.${c.page_number}</span>
+              </div>
+              <div class="citation-section-label">
                 Section: ${escapeHtml(c.section_heading || 'General')}
               </div>
               <div class="citation-quote-snippet">"${escapeHtml(c.excerpt)}"</div>
-            </div>
+            </button>
           `).join("")}
         </div>
       </div>
@@ -408,16 +687,11 @@ function appendAssistantMessage(data) {
   row.innerHTML = `
     <div class="msg-bubble-assistant">
       <div class="msg-top-meta">
-        <div class="confidence-indicator ${isHighConf ? '' : 'medium'}">
-          <i data-lucide="${isHighConf ? 'check-circle-2' : 'alert-circle'}"></i>
-          <span>${confPct}% Verified Support</span>
-        </div>
-        <div class="latency-metrics-tag">
-          <i data-lucide="zap"></i> ${totalMs} ms (${data.retrieved_chunks_count} chunks reranked)
-        </div>
+        ${badgeHtml}
+        ${latencyHtml}
       </div>
       ${data.retrieval_explanation ? `<div class="latency-metrics-tag"><i data-lucide="info"></i> ${escapeHtml(data.retrieval_explanation)}</div>` : ""}
-      <div class="msg-body-content">${escapeHtml(data.answer)}</div>
+      <div class="msg-body-content">${renderMarkdown(data.answer)}</div>
       ${citationsHtml}
     </div>
   `;
@@ -500,6 +774,25 @@ function renderDocumentsGrid() {
     const docYear = doc.effective_from ? String(doc.effective_from).slice(0, 4) : "";
     return (!year || docYear === year) && (!type || doc.file_type === type) && (!department || documentDepartment(doc) === department) && (!query || `${doc.title || ""} ${doc.filename || ""}`.toLowerCase().includes(query));
   });
+  const countText = document.getElementById("hub-doc-count-text");
+  const totalCount = (state.documents || []).length;
+  if (countText) {
+    if (totalCount === 0) {
+      countText.textContent = "0 Documents";
+    } else if (documents.length === totalCount) {
+      countText.textContent = `${totalCount} ${totalCount === 1 ? "Document" : "Documents"} Indexed`;
+    } else {
+      countText.textContent = `${documents.length} of ${totalCount} Filtered`;
+    }
+  }
+
+  const resetBtn = document.getElementById("btn-reset-doc-filters");
+  if (resetBtn) {
+    const hasFilter = Boolean(year || type || department || query);
+    resetBtn.style.opacity = hasFilter ? "1" : "0.5";
+    resetBtn.style.pointerEvents = hasFilter ? "auto" : "none";
+  }
+
   if (!documents.length) {
     grid.innerHTML = `
       <div class="empty-state">
@@ -692,18 +985,22 @@ function initCompare() {
 
 function renderComparisonMatrix(data) {
   const container = document.getElementById("compare-results");
+  state.comparison = data;
+  const resultLabel = document.getElementById("compare-result-label");
+  if (resultLabel) resultLabel.textContent = `${data.doc_a_title} vs ${data.doc_b_title} · ${data.comparison_matrix?.length || 0} clauses`;
   if (!data.comparison_matrix || data.comparison_matrix.length === 0) {
     container.innerHTML = `<div class="empty-state"><p>No overlapping clauses found.</p></div>`;
     return;
   }
 
   container.innerHTML = `
+    <div class="diff-summary-strip"><span><i data-lucide="scan-line"></i> Word-level visual diff</span><span><b class="diff-added-key">Added</b><b class="diff-removed-key">Removed</b><b class="diff-changed-key">Modified</b></span></div>
     <table class="diff-matrix-table">
       <thead>
         <tr>
           <th>Topic / Section</th>
-          <th>${escapeHtml(data.doc_a_title)}</th>
-          <th>${escapeHtml(data.doc_b_title)}</th>
+          <th><span class="diff-column-label baseline">A</span>${escapeHtml(data.doc_a_title)}</th>
+          <th><span class="diff-column-label comparison">B</span>${escapeHtml(data.doc_b_title)}</th>
           <th>Diff Status</th>
           <th>Evolution Summary</th>
         </tr>
@@ -712,8 +1009,8 @@ function renderComparisonMatrix(data) {
         ${data.comparison_matrix.map(c => `
           <tr>
             <td><strong>${escapeHtml(c.topic)}</strong></td>
-            <td><small style="color: var(--text-secondary);">${escapeHtml(c.doc_a_text || '—')}</small></td>
-            <td><small style="color: var(--text-secondary);">${escapeHtml(c.doc_b_text || '—')}</small></td>
+            <td><div class="diff-text ${c.change_type === "removed" ? "diff-removed" : ""}"><small>${highlightDiff(c.doc_a_text || "", c.doc_b_text || "", "removed") || "—"}</small></div></td>
+            <td><div class="diff-text ${c.change_type === "added" ? "diff-added" : ""}"><small>${highlightDiff(c.doc_a_text || "", c.doc_b_text || "", "added") || "—"}</small></div></td>
             <td>
               <span class="tag-badge ${c.change_type.toLowerCase()}">
                 ${c.change_type.toUpperCase()}
@@ -725,6 +1022,20 @@ function renderComparisonMatrix(data) {
       </tbody>
     </table>
   `;
+  initLucide();
+}
+
+function highlightDiff(leftText, rightText, side) {
+  const leftWords = leftText.split(/(\s+)/);
+  const rightWords = new Set(rightText.toLowerCase().split(/\s+/).filter(Boolean));
+  const sourceWords = side === "removed" ? leftWords : rightText.split(/(\s+)/);
+  const comparisonWords = side === "removed" ? rightText.toLowerCase().split(/\s+/) : leftText.toLowerCase().split(/\s+/);
+  const comparisonSet = new Set(comparisonWords.filter(Boolean));
+  return sourceWords.map(word => {
+    if (/^\s+$/.test(word)) return word;
+    const changed = !comparisonSet.has(word.toLowerCase());
+    return changed ? `<mark class="word-${side}">${escapeHtml(word)}</mark>` : escapeHtml(word);
+  }).join("");
 }
 
 function renderDemoComparisonMatrix() {
@@ -973,12 +1284,14 @@ function initQuickSample() {
         const resp = await fetch(`${API_BASE}/documents/load-demo`, { method: "POST" });
         if (resp.ok) {
           const loadedDocs = await resp.json();
-          loaded = true;
-          await fetchDocuments();
-          await fetchAnalytics();
-          populateDocSelectors();
-          switchTab("documents", "Document Hub & Ingestion Status");
-          showToast(`Successfully indexed ${loadedDocs.length} demo policies in Qdrant!`, "success");
+          if (Array.isArray(loadedDocs) && loadedDocs.length > 0) {
+            loaded = true;
+            await fetchDocuments();
+            await fetchAnalytics();
+            populateDocSelectors();
+            switchTab("documents", "Document Hub & Ingestion Status");
+            showToast(`Successfully indexed ${loadedDocs.length} demo policies in Qdrant!`, "success");
+          }
         }
       } catch (err) {
         // Fallback below

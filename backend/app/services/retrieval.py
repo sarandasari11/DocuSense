@@ -69,12 +69,16 @@ class HybridRetriever:
             if requested_versions and (document.version or "1.0") not in requested_versions:
                 continue
             if year is not None:
-                if not document.effective_from:
+                doc_label = f"{document.title} {document.filename} {document.version}"
+                year_in_label = str(year) in doc_label
+                has_exact_year_docs = any(str(year) in f"{d.title} {d.filename} {d.version}" for d in documents)
+                if has_exact_year_docs and not year_in_label:
                     continue
-                starts_before = document.effective_from.year <= year
-                ends_after = not document.effective_until or document.effective_until.year >= year
-                if not (starts_before and ends_after):
-                    continue
+                if document.effective_from:
+                    starts_before = document.effective_from.year <= year
+                    ends_after = not document.effective_until or document.effective_until.year >= year
+                    if not (starts_before and ends_after):
+                        continue
             matched_ids.append(document.id)
         return matched_ids
 

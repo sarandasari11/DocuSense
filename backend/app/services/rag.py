@@ -1,3 +1,4 @@
+import re
 import time
 import json
 import logging
@@ -16,20 +17,35 @@ class RAGEngine:
         self.provider = settings.DEFAULT_LLM_PROVIDER
 
     def _call_gemini(self, prompt: str) -> str:
-        """Call Google Gemini API."""
+        """Call Google Gemini API with automatic candidate model fallback."""
         if not settings.GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is not configured.")
-        
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.LLM_MODEL_NAME}:generateContent?key={settings.GEMINI_API_KEY}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024}
-        }
-        with httpx.Client(timeout=30.0) as client:
-            resp = client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
+
+        candidate_models = [settings.LLM_MODEL_NAME, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.6-flash"]
+        seen = set()
+        models = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
+
+        last_error = None
+        for model in models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={settings.GEMINI_API_KEY}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1024}
+            }
+            try:
+                with httpx.Client(timeout=45.0) as client:
+                    resp = client.post(url, json=payload)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        return data["candidates"][0]["content"]["parts"][0]["text"]
+                    else:
+                        logger.warning(f"Gemini model {model} returned status {resp.status_code}: {resp.text[:120]}")
+                        last_error = f"Status {resp.status_code}: {resp.text[:120]}"
+            except Exception as e:
+                logger.warning(f"Gemini model {model} call failed: {e}")
+                last_error = str(e)
+
+        raise RuntimeError(f"All Gemini models failed. Last error: {last_error}")
 
     def _call_openai(self, prompt: str) -> str:
         """Call OpenAI API."""
@@ -41,12 +57,12 @@ class RAGEngine:
         payload = {
             "model": "gpt-4o-mini",
             "messages": [
-                {"role": "system", "content": "You are DocuSense, a precise document intelligence assistant. Base your answers strictly on the provided evidence."},
+                {"role": "system", "content": "You are DocuSense, an advanced document intelligence assistant with dual capabilities: answering from uploaded document evidence or answering general questions using your general knowledge."},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.2
         }
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=60.0) as client:
             resp = client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -57,8 +73,13 @@ class RAGEngine:
         query: str,
         context_chunks: List[RetrievedCandidate],
         answer_only_from_documents: bool = True,
-    ) -> str:
-        """Synthesize answer with LLM or high-quality deterministic extractor fallback."""
+    ) -> Tuple[str, str]:
+        """Synthesize answer with LLM using dynamic brain reasoning.
+
+        The model evaluates whether the user is asking a general/conversational question
+        or seeking information from the indexed document repository.
+        Returns (answer_text, mode) where mode is 'GENERAL' or 'DOCUMENT'.
+        """
         formatted_context = ""
         for idx, c in enumerate(context_chunks, 1):
             formatted_context += (
@@ -68,42 +89,102 @@ class RAGEngine:
                 f"Content:\n{c.text}\n"
             )
 
-        source_rule = "Use ONLY the provided Source excerpts below." if answer_only_from_documents else "Use the Source excerpts when available. If they do not answer the question, provide a clearly labeled general answer without inventing document citations."
-        prompt = f"""You are DocuSense, an advanced document intelligence assistant.
-    {source_rule}
+        doc_clause = (
+            "If the question seeks company/policy facts and the provided excerpts do not contain sufficient evidence, state clearly: "
+            "'The provided documents do not contain sufficient evidence to answer this question.'"
+            if answer_only_from_documents
+            else "If the question seeks policy facts but excerpts lack them, clearly state what is missing and offer helpful general guidance."
+        )
 
-Rules:
-1. Provide a direct, structured, and factual answer based exclusively on the context.
-2. For each major point, reference the source document, page, and section.
-3. If the sources contain different versions across years or policies, explain the temporal changes clearly.
-4. If document-only mode is enabled and the context does not contain enough evidence, state clearly: "The provided documents do not contain sufficient evidence to answer this question."
+        prompt = f"""You are DocuSense, an intelligent enterprise document assistant powered by Google Gemini.
+You have two operational modes:
+1. [MODE: GENERAL] - For greetings ('Hi', 'Hello', 'Good morning', 'How are you?'), chit-chat, identity queries ('Who are you?'), or generalized questions (e.g. machine learning, programming, math, science, general business advice, writing) that do NOT require specific internal company policy documents.
+2. [MODE: DOCUMENT] - For questions asking about company policies, rules, working hours, remote work / WFH, leave/vacation entitlement, benefits, health reimbursement, policy IDs (e.g. HR-2024-001, HR-2026-017), versions, effective dates, or facts from uploaded corporate documents.
+
+TASK:
+Examine the user's question. Use your brain to decide whether to answer using your GENERAL brain or your DOCUMENT retrieval brain.
+
+FORMAT:
+On the very first line, write:
+[MODE: GENERAL] or [MODE: DOCUMENT]
+Then provide your complete, well-crafted answer.
+
+RULES FOR [MODE: GENERAL]:
+- Answer warmly, helpfully, and clearly using your general intelligence.
+- NEVER claim 'The provided documents do not contain sufficient evidence' for greetings or general questions!
+- Courteously mention that you are also ready to search and answer questions about their uploaded company documents and policies.
+
+RULES FOR [MODE: DOCUMENT]:
+- Answer accurately and thoroughly using the provided Context Excerpts.
+- Explicitly cite the document name, policy version/year, page number, and section heading.
+- If multiple versions (e.g. 2024 vs 2026) are present, contrast differences clearly.
+- {doc_clause}
 
 Context Excerpts:
-{formatted_context}
+{formatted_context if formatted_context else "No relevant document excerpts were retrieved."}
 
-Question:
+User Question:
 {query}
 
-Answer:"""
+Response:"""
 
-        # Try active LLM provider
+        raw_answer = ""
         try:
             if settings.GEMINI_API_KEY:
-                return self._call_gemini(prompt)
+                raw_answer = self._call_gemini(prompt)
             elif settings.OPENAI_API_KEY:
-                return self._call_openai(prompt)
+                raw_answer = self._call_openai(prompt)
         except Exception as e:
             logger.warning(f"LLM API call failed ({e}). Using offline grounded synthesis fallback.")
 
-        # Offline grounded synthesis fallback for local demo/viva when offline
-        if not context_chunks and not answer_only_from_documents:
-            return "No document evidence was found. A general answer could not be generated while the configured language model is unavailable."
+        if raw_answer:
+            cleaned = raw_answer.strip()
+            mode = "DOCUMENT"
+            mode_match = re.search(r"^\s*\[?MODE\s*:\s*(GENERAL|DOCUMENT)\]?:?", cleaned, re.IGNORECASE)
+            if mode_match:
+                mode = mode_match.group(1).upper()
+                cleaned = cleaned[mode_match.end():].strip()
+            elif "MODE: GENERAL" in cleaned[:40] or "MODE:GENERAL" in cleaned[:40]:
+                mode = "GENERAL"
+                lines = cleaned.split("\n", 1)
+                cleaned = lines[1].strip() if len(lines) > 1 else lines[0]
+            elif "MODE: DOCUMENT" in cleaned[:40] or "MODE:DOCUMENT" in cleaned[:40]:
+                mode = "DOCUMENT"
+                lines = cleaned.split("\n", 1)
+                cleaned = lines[1].strip() if len(lines) > 1 else lines[0]
+            else:
+                if temporal_analyzer.is_conversational_or_greeting(query):
+                    mode = "GENERAL"
+                else:
+                    mode = "DOCUMENT"
+
+            return cleaned, mode
+
+        # Offline fallback when LLM is unavailable
+        if temporal_analyzer.is_conversational_or_greeting(query):
+            return (
+                "Hello! I am DocuSense, your document intelligence assistant powered by Gemini. "
+                "I can answer general questions using my general reasoning brain, as well as help you search, compare, "
+                "and verify claims across your uploaded company policies and documents.",
+                "GENERAL"
+            )
+
+        if not context_chunks:
+            return (
+                (
+                    "The provided documents do not contain sufficient evidence to answer this question."
+                    if answer_only_from_documents
+                    else "No relevant document evidence was found to answer this question."
+                ),
+                "DOCUMENT"
+            )
 
         top_excerpts = [f"- {c.text[:220]}... *(Source: {c.document_name}, Page {c.page_number})*" for c in context_chunks[:3]]
         return (
             f"Based on the retrieved document evidence:\n\n"
             + "\n\n".join(top_excerpts)
-            + "\n\n*(Evidence grounded directly from verified document pages)*"
+            + "\n\n*(Evidence grounded directly from verified document pages)*",
+            "DOCUMENT"
         )
 
     def answer_query(
@@ -172,38 +253,52 @@ Answer:"""
             top_chunks = candidates[:settings.RERANK_TOP_K]
         latencies["reranking_ms"] = round((time.time() - t2) * 1000, 2)
 
-        # Step 4: LLM Generation
+        # Step 4: Intelligent LLM Generation
         t3 = time.time()
-        if not top_chunks:
-            answer = (
-                "The provided documents do not contain sufficient evidence to answer this question."
-                if answer_only_from_documents
-                else "No relevant document evidence was found to answer this question."
-            )
-            confidence = 0.0
-            citations = []
-        else:
-            answer = self._generate_grounded_response(rewritten_query, top_chunks, answer_only_from_documents)
-            # Calculate grounded confidence estimate
-            avg_score = sum(c.score for c in top_chunks) / len(top_chunks) if top_chunks else 0.0
-            confidence = min(0.98, max(0.65, round(0.7 + (avg_score * 0.25), 2)))
+        answer, mode = self._generate_grounded_response(
+            cleaned_query, top_chunks, answer_only_from_documents
+        )
 
-            citations = [
-                CitationRead(
-                    document_id=c.document_id,
-                    document_name=c.document_name,
-                    page_number=c.page_number,
-                    section_heading=c.section_heading,
-                    excerpt=c.text[:200] + ("..." if len(c.text) > 200 else ""),
-                    relevance_score=round(c.score, 3),
-                    confidence=round(min(0.99, max(0.0, 0.55 + c.score * 12)), 3),
-                    retrieval_explanation=c.retrieval_explanation + ("; cross-encoder reranked" if "+reranked" in c.source else ""),
-                    document_version=c.document_version,
-                    effective_from=c.effective_from,
-                    effective_until=c.effective_until,
+        if mode == "GENERAL":
+            citations = []
+            confidence = 0.95
+            chunks_count = 0
+            retrieval_expl = "Answered using Gemini general reasoning brain"
+        else:
+            # Document mode
+            if not top_chunks or "not contain sufficient evidence" in answer.lower() or "no relevant document evidence" in answer.lower():
+                citations = []
+                confidence = 0.4 if top_chunks else 0.0
+                chunks_count = len(top_chunks)
+                retrieval_expl = "Searched repository; no sufficient document evidence found"
+            else:
+                chunks_count = len(top_chunks)
+                avg_score = sum(c.score for c in top_chunks) / len(top_chunks) if top_chunks else 0.0
+                confidence = min(0.98, max(0.65, round(0.7 + (avg_score * 0.25), 2)))
+
+                citations = [
+                    CitationRead(
+                        document_id=c.document_id,
+                        document_name=c.document_name,
+                        page_number=c.page_number,
+                        section_heading=c.section_heading,
+                        excerpt=c.text[:200] + ("..." if len(c.text) > 200 else ""),
+                        relevance_score=round(c.score, 3),
+                        confidence=round(min(0.99, max(0.0, 0.55 + c.score * 12)), 3),
+                        retrieval_explanation=c.retrieval_explanation + ("; cross-encoder reranked" if "+reranked" in c.source else ""),
+                        document_version=c.document_version,
+                        effective_from=c.effective_from,
+                        effective_until=c.effective_until,
+                    )
+                    for c in top_chunks
+                ]
+                retrieval_expl = (
+                    f"Retrieved with {'hybrid dense + BM25' if use_hybrid else 'dense semantic'} search"
+                    + (f", filtered to year {target_year}" if target_year else "")
+                    + (f", filtered to versions {', '.join(versions)}" if versions else "")
+                    + (", answer grounded in indexed documents" if answer_only_from_documents else "")
                 )
-                for c in top_chunks
-            ]
+
         latencies["generation_ms"] = round((time.time() - t3) * 1000, 2)
         latencies["total_ms"] = round((time.time() - t0) * 1000, 2)
 
@@ -213,14 +308,9 @@ Answer:"""
             confidence_score=confidence,
             citations=citations,
             latency_ms=latencies,
-            retrieved_chunks_count=len(top_chunks),
+            retrieved_chunks_count=chunks_count,
             rewritten_query=rewritten_query if rewritten_query != cleaned_query else None,
-            retrieval_explanation=(
-                f"Retrieved with {'hybrid dense + BM25' if use_hybrid else 'dense semantic'} search"
-                + (f", filtered to year {target_year}" if target_year else "")
-                + (f", filtered to versions {', '.join(versions)}" if versions else "")
-                + (", answer restricted to indexed documents" if answer_only_from_documents else "")
-            ),
+            retrieval_explanation=retrieval_expl,
         )
 
 rag_engine = RAGEngine()

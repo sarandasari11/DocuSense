@@ -4,6 +4,7 @@ import json
 import datetime
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from app.config import settings
@@ -73,21 +74,49 @@ def load_demo_documents(session: Session = Depends(get_session)):
             sample_dir = p
             break
 
-    if not sample_dir:
-        raise HTTPException(status_code=404, detail="Demo sample data directory not found.")
-
     demo_files = [
         {
             "filename": "HR_Policy_2024.txt",
             "title": "HR Policy 2024",
             "version": "2024.1",
             "effective_from": datetime.date(2024, 1, 1),
+            "content": (
+                "ACME GLOBAL ENTERPRISES\n"
+                "EMPLOYEE HANDBOOK AND POLICIES (2024 EDITION)\n"
+                "Effective Date: January 1, 2024\n"
+                "Policy ID: HR-2024-001\n\n"
+                "1. GENERAL WORKING HOURS AND ATTENDANCE\n"
+                "All standard full-time employees are expected to work 40 hours per week from 9:00 AM to 5:00 PM Monday through Friday.\n\n"
+                "2. REMOTE WORK ALLOWANCE\n"
+                "Employees are eligible for hybrid flexible working arrangements. Eligible employees may work remotely up to 2 days per week. "
+                "Prior written approval from the departmental manager is mandatory before commencing remote work.\n\n"
+                "3. ANNUAL LEAVE ENTITLEMENT\n"
+                "Full-time personnel receive 20 days of paid annual vacation leave per calendar year. Unused leave may not be rolled over into the subsequent fiscal year.\n\n"
+                "4. HEALTH AND REIMBURSEMENT\n"
+                "The company provides comprehensive medical coverage and up to $500 annual wellness equipment reimbursement with receipt submission.\n"
+            ),
         },
         {
             "filename": "HR_Policy_2026.txt",
             "title": "HR Policy 2026",
             "version": "2026.1",
             "effective_from": datetime.date(2026, 1, 1),
+            "content": (
+                "ACME GLOBAL ENTERPRISES\n"
+                "EMPLOYEE HANDBOOK AND POLICIES (2026 EDITION)\n"
+                "Effective Date: January 1, 2026\n"
+                "Policy ID: HR-2026-017\n\n"
+                "1. GENERAL WORKING HOURS AND ATTENDANCE\n"
+                "All standard full-time employees are expected to work 40 hours per week with core collaboration hours between 10:00 AM and 4:00 PM.\n\n"
+                "2. REMOTE WORK ALLOWANCE\n"
+                "Under the modernized agile workplace initiative, eligible employees may work remotely up to 3 days per week. Departmental registration is recommended.\n\n"
+                "3. ANNUAL LEAVE ENTITLEMENT\n"
+                "Full-time personnel are granted 25 days of paid annual vacation leave per calendar year to promote work-life balance. Up to 5 days can be carried over.\n\n"
+                "4. HEALTH AND REIMBURSEMENT\n"
+                "The company provides comprehensive medical coverage, mental health counseling, and up to $1,000 annual wellness stipend.\n\n"
+                "5. ARTIFICIAL INTELLIGENCE TOOLS USAGE\n"
+                "Employees utilizing generative AI tools must adhere to the data privacy and IP security guidelines.\n"
+            ),
         },
     ]
 
@@ -95,9 +124,7 @@ def load_demo_documents(session: Session = Depends(get_session)):
     os.makedirs(settings.STORAGE_DIR, exist_ok=True)
 
     for item in demo_files:
-        src_path = os.path.join(sample_dir, item["filename"])
-        if not os.path.exists(src_path):
-            continue
+        src_path = os.path.join(sample_dir, item["filename"]) if sample_dir else None
 
         existing = session.exec(
             select(Document).where(Document.filename == item["filename"])
@@ -120,7 +147,11 @@ def load_demo_documents(session: Session = Depends(get_session)):
 
         dest_filename = f"{int(datetime.datetime.utcnow().timestamp())}_{item['filename']}"
         dest_path = os.path.join(settings.STORAGE_DIR, dest_filename)
-        shutil.copyfile(src_path, dest_path)
+        if src_path and os.path.exists(src_path):
+            shutil.copyfile(src_path, dest_path)
+        else:
+            with open(dest_path, "w", encoding="utf-8") as f:
+                f.write(item["content"])
 
         doc = Document(
             filename=item["filename"],
@@ -191,6 +222,21 @@ def get_document_content(document_id: int, session: Session = Depends(get_sessio
             for chunk in chunks
         ],
     }
+
+
+@router.get("/{document_id}/file")
+def get_document_file(document_id: int, session: Session = Depends(get_session)):
+    """Stream the original source file for the in-browser document reader."""
+    doc = session.get(Document, document_id)
+    if not doc or not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="Original document file not found")
+
+    media_types = {
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "txt": "text/plain",
+    }
+    return FileResponse(doc.file_path, media_type=media_types.get(doc.file_type, "application/octet-stream"), filename=doc.filename)
 
 @router.delete("/{document_id}")
 def delete_document(document_id: int, session: Session = Depends(get_session)):
