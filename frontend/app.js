@@ -1323,7 +1323,11 @@ function initQuickSample() {
         await fetchAnalytics();
         populateDocSelectors();
         switchTab("documents", "Document Hub & Ingestion Status");
-        showToast(`Successfully loaded & indexed demo policies (2024 & 2026) in Qdrant!`, "success");
+        if (uploadedCount > 0) {
+          showToast(`Successfully loaded & indexed demo policies (2024 & 2026) in Qdrant!`, "success");
+        } else {
+          showToast("Failed to load demo policies. Please check backend connection.", "error");
+        }
       }
     } catch (e) {
       console.error("Error loading demo policies:", e);

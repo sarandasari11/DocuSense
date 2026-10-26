@@ -36,16 +36,6 @@ document.addEventListener("DOMContentLoaded", () => {
   window.setInterval(fetchSystemHealth, 30000);
 });
 
-window.addEventListener("docusense:new-conversation", () => {
-  state.conversationId = null;
-  const chat = document.getElementById("chat-messages");
-  const evidence = document.getElementById("evidence-list");
-  if (chat) chat.innerHTML = `<div class="chat-hero compact-hero"><div class="hero-icon-container"><i data-lucide="message-square-plus"></i></div><h2>New grounded session</h2><p>Ask a question and inspect the exact source passages behind the answer.</p></div>`;
-  if (evidence) evidence.innerHTML = `<div class="evidence-empty"><i data-lucide="quote"></i><span>Ask a question to inspect cited passages.</span></div>`;
-  document.getElementById("crumb-current-page")?.replaceChildren("Grounded Reasoning & Chat");
-  initLucide();
-});
-
 async function initAuth() {
   const button = document.getElementById("auth-button");
   if (!button) return;
@@ -119,6 +109,8 @@ function initWorkspaceRail() {
     });
   }
 
+  const search = document.getElementById("source-search-input");
+  if (search) search.addEventListener("input", () => renderSourceRail(search.value));
 }
 
 async function fetchConversations() {
@@ -127,7 +119,6 @@ async function fetchConversations() {
     if (!response.ok) return;
     state.conversations = await response.json();
     renderConversationRail();
-    window.dispatchEvent(new CustomEvent("docusense:conversation-updated"));
   } catch (error) {
     renderConversationRail();
   }
@@ -175,8 +166,6 @@ async function loadConversation(conversationId) {
   if (crumb) crumb.textContent = conversation.title;
 }
 
-window.docusenseLoadConversation = loadConversation;
-
 async function renameConversation(conversationId) {
   const conversation = state.conversations.find(item => String(item.id) === String(conversationId));
   const title = window.prompt("Rename conversation", conversation?.title || "Conversation");
@@ -194,6 +183,23 @@ async function deleteConversation(conversationId) {
     await fetchConversations();
     showToast("Conversation deleted.", "success");
   }
+}
+
+function renderSourceRail(query = "") {
+  const list = document.getElementById("source-list");
+  const count = document.getElementById("rail-source-count");
+  if (!list) return;
+  const normalized = query.toLowerCase().trim();
+  const docs = state.documents.filter(doc => (doc.title || doc.filename).toLowerCase().includes(normalized));
+  if (count) count.textContent = docs.length;
+  list.innerHTML = docs.length ? docs.map(doc => `
+    <button class="source-item" data-document-id="${doc.id}" title="Open ${escapeHtml(doc.title || doc.filename)}">
+      <span class="source-file-icon"><i data-lucide="file-text"></i></span>
+      <span class="source-item-copy"><strong>${escapeHtml(doc.title || doc.filename)}</strong><small>${escapeHtml(doc.version || "1.0")} · ${doc.status || "indexed"}</small></span>
+      <span class="source-ready-dot ${doc.status === "ready" ? "" : "pending"}"></span>
+    </button>`).join("") : `<div class="rail-empty">No matching sources</div>`;
+  list.querySelectorAll(".source-item").forEach(item => item.addEventListener("click", () => openDocumentDetail(item.dataset.documentId)));
+  initLucide();
 }
 
 function documentDepartment(document) {
@@ -227,20 +233,51 @@ async function fetchSystemHealth() {
 }
 
 function initDocumentFilters() {
-  ["document-year-filter", "document-type-filter", "document-department-filter", "document-search-filter"].forEach(id => {
+  ["document-year-filter", "document-type-filter", "document-department-filter"].forEach(id => {
     const element = document.getElementById(id);
     if (element) element.addEventListener("input", renderDocumentsGrid);
     if (element) element.addEventListener("change", renderDocumentsGrid);
   });
+
+  const resetBtn = document.getElementById("btn-reset-doc-filters");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      const year = document.getElementById("document-year-filter");
+      const type = document.getElementById("document-type-filter");
+      const dept = document.getElementById("document-department-filter");
+      if (year) year.value = "";
+      if (type) type.value = "";
+      if (dept) dept.value = "";
+      renderDocumentsGrid();
+    });
+  }
+}
+
+function setEvidenceOpen(isOpen) {
+  state.evidenceOpen = isOpen;
+  const rail = document.querySelector(".evidence-rail");
+  const layout = document.querySelector(".chat-layout");
+  const reopenBtn = document.getElementById("btn-reopen-evidence");
+  const reopenBadge = document.getElementById("evidence-reopen-badge");
+
+  if (reopenBadge) {
+    const count = (state.latestCitations || []).length;
+    reopenBadge.textContent = count;
+    reopenBadge.style.display = count > 0 ? "inline-flex" : "none";
+  }
+
+  if (rail) rail.classList.toggle("is-hidden", !isOpen);
+  if (layout) layout.classList.toggle("evidence-hidden", !isOpen);
+  if (reopenBtn) reopenBtn.classList.toggle("visible", !isOpen);
 }
 
 function initEvidencePanel() {
   const close = document.getElementById("btn-close-evidence");
-  if (close) close.addEventListener("click", () => {
-    state.evidenceOpen = false;
-    document.querySelector(".evidence-rail").classList.add("is-hidden");
-    document.querySelector(".chat-layout").classList.add("evidence-hidden");
-  });
+  if (close) close.addEventListener("click", () => setEvidenceOpen(false));
+
+  const reopenBtn = document.getElementById("btn-reopen-evidence");
+  if (reopenBtn) reopenBtn.addEventListener("click", () => setEvidenceOpen(true));
+
   const open = document.getElementById("btn-open-full-document");
   if (open) open.addEventListener("click", () => {
     const citation = state.latestCitations[0];
@@ -254,12 +291,18 @@ function renderEvidence(citations = []) {
   state.latestCitations = citations;
   const list = document.getElementById("evidence-list");
   const count = document.getElementById("evidence-count");
-  const rail = document.querySelector(".evidence-rail");
   if (!list) return;
-  if (rail && !state.evidenceOpen) {
-    rail.classList.remove("is-hidden");
-    document.querySelector(".chat-layout").classList.remove("evidence-hidden");
-    state.evidenceOpen = true;
+
+  const reopenBadge = document.getElementById("evidence-reopen-badge");
+  if (reopenBadge) {
+    reopenBadge.textContent = citations.length;
+    reopenBadge.style.display = citations.length > 0 ? "inline-flex" : "none";
+  }
+
+  if (state.evidenceOpen) {
+    setEvidenceOpen(true);
+  } else {
+    setEvidenceOpen(false);
   }
   const minimumConfidence = Number(document.getElementById("evidence-confidence-filter")?.value || 0);
   const visibleCitations = citations.map((citation, index) => ({ citation, index })).filter(item => (item.citation.confidence || item.citation.relevance_score || 0) >= minimumConfidence);
@@ -268,7 +311,7 @@ function renderEvidence(citations = []) {
     <button class="evidence-card" data-evidence-index="${index}" title="Open source passage">
       <span class="evidence-card-top"><span class="evidence-number">${index + 1}</span><span class="evidence-doc">${escapeHtml(citation.document_name || "Source")}</span><span class="evidence-page">p.${citation.page_number} · ${Math.round((citation.confidence || citation.relevance_score || 0) * 100)}%</span></span>
       <span class="evidence-excerpt">${escapeHtml(citation.excerpt)}</span><span class="evidence-meter"><span style="width:${Math.min(100, Math.max(8, (citation.confidence || citation.relevance_score || 0) * 100))}%"></span></span>
-    </button>`).join("") : `<div class="evidence-empty"><i data-lucide="quote"></i><span>No passages meet this confidence threshold.</span></div>`;
+    </button>`).join("") : `<div class="evidence-empty"><i data-lucide="${citations.length === 0 ? 'sparkles' : 'quote'}"></i><span>${citations.length === 0 ? 'General reasoning query — no document passages required.' : 'No passages meet this confidence threshold.'}</span></div>`;
   list.querySelectorAll(".evidence-card").forEach(card => card.addEventListener("click", () => {
     const citation = state.latestCitations[Number(card.dataset.evidenceIndex)];
     if (citation) openDocumentDetail(citation.document_id, citation.page_number, citation.section_heading);
@@ -512,6 +555,80 @@ function removeLoadingPlaceholder(id) {
   if (el) el.remove();
 }
 
+function renderMarkdown(text) {
+  if (!text) return "";
+
+  // Strip accidental mode prefixes if present
+  let cleanText = String(text)
+    .replace(/^\[?MODE\s*:\s*(GENERAL|DOCUMENT)\]?:?\s*/i, "")
+    .trim();
+
+  // If marked library is available from CDN, use it with GFM
+  if (typeof marked !== "undefined" && typeof marked.parse === "function") {
+    try {
+      marked.use({
+        gfm: true,
+        breaks: true
+      });
+      return marked.parse(cleanText);
+    } catch (err) {
+      console.warn("marked.parse encountered an issue, falling back to built-in renderer:", err);
+    }
+  }
+
+  // Built-in resilient markdown parser fallback
+  let html = cleanText
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // Code blocks: ```lang ... ```
+  html = html.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+    return `<pre><code class="language-${lang || 'plaintext'}">${code.trim()}</code></pre>`;
+  });
+
+  // Inline code: `code`
+  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+  // Headers: ###, ##, #
+  html = html.replace(/^### (.*$)/gim, '<h4>$1</h4>');
+  html = html.replace(/^## (.*$)/gim, '<h3>$1</h3>');
+  html = html.replace(/^# (.*$)/gim, '<h2>$1</h2>');
+
+  // Bold & Italic: ***text***
+  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+
+  // Bold: **text**
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Italic: *text*
+  html = html.replace(/(^|[^\*])\*([^\*\n]+)\*([^\*]|$)/g, '$1<em>$2</em>$3');
+
+  // Blockquotes: > quote
+  html = html.replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+  // Unordered list items: * item or - item
+  html = html.replace(/^[\*\-]\s+(.*$)/gim, '<li>$1</li>');
+  html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+  html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+  // Ordered list items: 1. item
+  html = html.replace(/^\d+\.\s+(.*$)/gim, '<li class="oli">$1</li>');
+  html = html.replace(/(<li class="oli">[\s\S]*?<\/li>)/g, '<ol>$1</ol>');
+  html = html.replace(/<\/ol>\s*<ol>/g, '');
+
+  // Split into paragraphs by double newlines
+  const blocks = html.split(/\n{2,}/);
+  return blocks.map(block => {
+    const trimmed = block.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("<h") || trimmed.startsWith("<ul") || trimmed.startsWith("<ol") || trimmed.startsWith("<pre") || trimmed.startsWith("<blockquote")) {
+      return trimmed;
+    }
+    return `<p>${trimmed.replace(/\n/g, "<br/>")}</p>`;
+  }).join("\n");
+}
+
 function appendAssistantMessage(data) {
   const container = document.getElementById("chat-messages");
   const row = document.createElement("div");
@@ -520,6 +637,21 @@ function appendAssistantMessage(data) {
   const confPct = Math.round(data.confidence_score * 100);
   const isHighConf = confPct >= 85;
   const totalMs = data.latency_ms?.total_ms || 45;
+  const isGeneralBrain = (data.retrieval_explanation || "").toLowerCase().includes("general reasoning brain");
+
+  const badgeHtml = isGeneralBrain
+    ? `<div class="confidence-indicator" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);">
+         <i data-lucide="sparkles"></i>
+         <span>Gemini General Brain</span>
+       </div>`
+    : `<div class="confidence-indicator ${isHighConf ? '' : 'medium'}">
+         <i data-lucide="${isHighConf ? 'check-circle-2' : 'alert-circle'}"></i>
+         <span>${confPct}% Verified Support</span>
+       </div>`;
+
+  const latencyHtml = isGeneralBrain
+    ? `<div class="latency-metrics-tag"><i data-lucide="zap"></i> ${totalMs} ms (Direct LLM reasoning)</div>`
+    : `<div class="latency-metrics-tag"><i data-lucide="zap"></i> ${totalMs} ms (${data.retrieved_chunks_count} chunks reranked)</div>`;
 
   const resolveCitationDocumentId = citation => citation.document_id || state.documents.find(doc => (doc.title || doc.filename) === citation.document_name)?.id || "";
   let citationsHtml = "";
@@ -527,20 +659,25 @@ function appendAssistantMessage(data) {
     citationsHtml = `
       <div class="citation-container">
         <div class="citation-header-title">
-          <i data-lucide="shield-check" style="color: var(--accent-emerald);"></i> Verified Evidence & Ground Truth Citations (${data.citations.length})
+          <div class="citation-title-left">
+            <i data-lucide="shield-check" style="color: var(--accent-emerald);"></i>
+            <span>Verified Ground Truth Sources (${data.citations.length})</span>
+          </div>
+          <span class="citation-hint-badge">Click card to inspect cited page</span>
         </div>
         <div class="citation-cards-grid">
-          ${data.citations.map(c => `
-              <button class="citation-card" data-document-id="${resolveCitationDocumentId(c)}" data-page-number="${c.page_number}" data-section-heading="${escapeHtml(c.section_heading || "")}" title="Click to view cited section in document">
-              <div class="citation-top-row">
+          ${data.citations.map((c, i) => `
+            <button class="citation-card" data-document-id="${resolveCitationDocumentId(c)}" data-page-number="${c.page_number}" data-section-heading="${escapeHtml(c.section_heading || "")}" title="Click to view cited section in document" type="button">
+              <div class="citation-card-header">
+                <span class="citation-index-chip">${i + 1}</span>
                 <span class="citation-doc-name"><i data-lucide="file-text"></i> ${escapeHtml(c.document_name)}</span>
-                <span class="citation-page-badge">Page ${c.page_number}</span>
-              </button>
-              <div style="font-size: 0.76rem; color: var(--accent-indigo); margin-bottom: 4px; font-weight: 600;">
+                <span class="citation-page-badge">p.${c.page_number}</span>
+              </div>
+              <div class="citation-section-label">
                 Section: ${escapeHtml(c.section_heading || 'General')}
               </div>
               <div class="citation-quote-snippet">"${escapeHtml(c.excerpt)}"</div>
-            </div>
+            </button>
           `).join("")}
         </div>
       </div>
@@ -550,16 +687,11 @@ function appendAssistantMessage(data) {
   row.innerHTML = `
     <div class="msg-bubble-assistant">
       <div class="msg-top-meta">
-        <div class="confidence-indicator ${isHighConf ? '' : 'medium'}">
-          <i data-lucide="${isHighConf ? 'check-circle-2' : 'alert-circle'}"></i>
-          <span>${confPct}% Verified Support</span>
-        </div>
-        <div class="latency-metrics-tag">
-          <i data-lucide="zap"></i> ${totalMs} ms (${data.retrieved_chunks_count} chunks reranked)
-        </div>
+        ${badgeHtml}
+        ${latencyHtml}
       </div>
       ${data.retrieval_explanation ? `<div class="latency-metrics-tag"><i data-lucide="info"></i> ${escapeHtml(data.retrieval_explanation)}</div>` : ""}
-      <div class="msg-body-content">${escapeHtml(data.answer)}</div>
+      <div class="msg-body-content">${renderMarkdown(data.answer)}</div>
       ${citationsHtml}
     </div>
   `;
@@ -618,6 +750,7 @@ async function fetchDocuments() {
     if (resp.ok) {
       state.documents = await resp.json();
       renderDocumentsGrid();
+      renderSourceRail();
       populateDocSelectors();
       updateDocCount();
     }
@@ -641,6 +774,25 @@ function renderDocumentsGrid() {
     const docYear = doc.effective_from ? String(doc.effective_from).slice(0, 4) : "";
     return (!year || docYear === year) && (!type || doc.file_type === type) && (!department || documentDepartment(doc) === department) && (!query || `${doc.title || ""} ${doc.filename || ""}`.toLowerCase().includes(query));
   });
+  const countText = document.getElementById("hub-doc-count-text");
+  const totalCount = (state.documents || []).length;
+  if (countText) {
+    if (totalCount === 0) {
+      countText.textContent = "0 Documents";
+    } else if (documents.length === totalCount) {
+      countText.textContent = `${totalCount} ${totalCount === 1 ? "Document" : "Documents"} Indexed`;
+    } else {
+      countText.textContent = `${documents.length} of ${totalCount} Filtered`;
+    }
+  }
+
+  const resetBtn = document.getElementById("btn-reset-doc-filters");
+  if (resetBtn) {
+    const hasFilter = Boolean(year || type || department || query);
+    resetBtn.style.opacity = hasFilter ? "1" : "0.5";
+    resetBtn.style.pointerEvents = hasFilter ? "auto" : "none";
+  }
+
   if (!documents.length) {
     grid.innerHTML = `
       <div class="empty-state">
@@ -1132,12 +1284,14 @@ function initQuickSample() {
         const resp = await fetch(`${API_BASE}/documents/load-demo`, { method: "POST" });
         if (resp.ok) {
           const loadedDocs = await resp.json();
-          loaded = true;
-          await fetchDocuments();
-          await fetchAnalytics();
-          populateDocSelectors();
-          switchTab("documents", "Document Hub & Ingestion Status");
-          showToast(`Successfully indexed ${loadedDocs.length} demo policies in Qdrant!`, "success");
+          if (Array.isArray(loadedDocs) && loadedDocs.length > 0) {
+            loaded = true;
+            await fetchDocuments();
+            await fetchAnalytics();
+            populateDocSelectors();
+            switchTab("documents", "Document Hub & Ingestion Status");
+            showToast(`Successfully indexed ${loadedDocs.length} demo policies in Qdrant!`, "success");
+          }
         }
       } catch (err) {
         // Fallback below
@@ -1169,7 +1323,11 @@ function initQuickSample() {
         await fetchAnalytics();
         populateDocSelectors();
         switchTab("documents", "Document Hub & Ingestion Status");
-        showToast(`Successfully loaded & indexed demo policies (2024 & 2026) in Qdrant!`, "success");
+        if (uploadedCount > 0) {
+          showToast(`Successfully loaded & indexed demo policies (2024 & 2026) in Qdrant!`, "success");
+        } else {
+          showToast("Failed to load demo policies. Please check backend connection.", "error");
+        }
       }
     } catch (e) {
       console.error("Error loading demo policies:", e);

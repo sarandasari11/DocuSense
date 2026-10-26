@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    LLM_MODEL_NAME: str = "gemini-1.5-flash"
+    LLM_MODEL_NAME: str = "gemini-3.5-flash"
     
     # RAG Hyperparameters
     RETRIEVAL_TOP_K_DENSE: int = 20

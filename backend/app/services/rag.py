@@ -23,10 +23,11 @@ class RAGEngine:
 
         candidate_models = [
             settings.LLM_MODEL_NAME,
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+            "gemini-3.6-flash",
+            "gemini-flash-latest",
         ]
         seen = set()
         models = [m for m in candidate_models if m and not (m in seen or seen.add(m))]

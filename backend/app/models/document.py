@@ -1,7 +1,7 @@
 import datetime
 from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Relationship
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # ----------------- Database ORM Models -----------------
 
@@ -83,7 +83,7 @@ class Citation(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     message_id: int = Field(foreign_key="messages.id", index=True)
-    document_id: int = Field(foreign_key="documents.id")
+    document_id: Optional[int] = Field(default=None, foreign_key="documents.id", nullable=True)
     document_name: str
     page_number: int
     section_heading: Optional[str] = None
@@ -112,6 +112,8 @@ class Contradiction(SQLModel, table=True):
 # ----------------- API Pydantic Schemas -----------------
 
 class DocumentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     filename: str
     file_type: str
@@ -126,6 +128,8 @@ class DocumentRead(BaseModel):
     created_at: datetime.datetime
 
 class CitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     document_id: int
     document_name: str
     page_number: int
@@ -167,6 +171,8 @@ class SearchQuery(BaseModel):
     mode: str = "hybrid"  # "dense" | "sparse" | "hybrid"
 
 class SearchResultItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     chunk_id: int
     document_id: int
     document_name: str
@@ -185,6 +191,8 @@ class CompareRequest(BaseModel):
     doc_b_id: int
 
 class ClauseComparison(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     topic: str
     doc_a_section: Optional[str]
     doc_a_text: Optional[str]
@@ -196,6 +204,8 @@ class ClauseComparison(BaseModel):
     summary_of_change: str
 
 class CompareResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     doc_a_title: str
     doc_b_title: str
     comparison_matrix: List[ClauseComparison]

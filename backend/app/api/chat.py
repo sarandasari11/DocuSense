@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from app.database.db import get_session
-from app.models.document import ChatRequest, ChatResponse, Conversation, Message, Citation
+from app.models.document import ChatRequest, ChatResponse, Conversation, Message, Citation, Document
 from app.services.rag import rag_engine
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
@@ -12,7 +12,7 @@ def list_conversations(session: Session = Depends(get_session)):
     conversations = session.exec(select(Conversation).order_by(Conversation.created_at.desc())).all()
     return [
         {"id": item.id, "title": item.title, "created_at": item.created_at}
-        for item in conversations
+        for item in conversations 
     ]
 
 
@@ -124,11 +124,13 @@ def chat_with_documents(payload: ChatRequest, session: Session = Depends(get_ses
     session.commit()
     session.refresh(assistant_msg)
 
-    # Save Citations
+    # Save Citations safely against foreign key constraints
+    existing_doc_ids = set(session.exec(select(Document.id)).all())
     for cite in response.citations:
+        doc_id = cite.document_id if cite.document_id in existing_doc_ids else None
         db_cite = Citation(
             message_id=assistant_msg.id,
-            document_id=cite.document_id,
+            document_id=doc_id,
             document_name=cite.document_name,
             page_number=cite.page_number,
             section_heading=cite.section_heading,
